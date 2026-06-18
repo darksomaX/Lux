@@ -15,6 +15,10 @@ import { initVault, saveNote, listVault, importFile, openVaultItem, deleteVaultI
 import { armPrimeOnFirstGesture } from "./popup-perm.js";
 import { listEngines as listSearchEngines } from "./search-engines.js";
 import { pickRomFolder, renderGamesHome, launchRom } from "./games.js";
+import { downloadSession, pickAndImportSession } from "./session.js";
+import { startIframeWatch, stopIframeWatch } from "./iframe-watch.js";
+import { startTitleWatch, stopTitleWatch } from "./true-title.js";
+import * as usb from "./usb-killswitch.js";
 
 const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
@@ -52,6 +56,8 @@ async function boot() {
   initKillSwitch();
   initPhase2();
   initIpBadge();
+  initSessionTransfer();
+  initUsbKillswitch();
   // Prime popup permission on the first gesture so the Cloak button works
   // without a failed first click.
   armPrimeOnFirstGesture();
@@ -244,6 +250,7 @@ async function navigate(input) {
     $("stage").classList.add("active");
     $("stage-crumb").textContent = safeHostname(url);
     setStatus("");
+    onStageOpened();
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -287,6 +294,7 @@ function initStage() {
   $("stage-close").onclick = () => {
     $("frame").src = "about:blank";
     $("stage").classList.remove("active");
+    onStageClosed();
     currentTarget = null;
     const s = loadSettings();
     if (s.lockOnExit) lock();
@@ -338,6 +346,93 @@ function initKillSwitch() {
     kill.checkIpOnce();
     setInterval(() => kill.checkIpOnce(), 60000);
   }
+}
+
+// ---------- session transfer (USB) ----------
+function initSessionTransfer() {
+  // Buttons are created dynamically in the settings panel via data attributes.
+  // We listen for clicks on elements with data-action.
+  document.addEventListener("click", async (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    const action = el.dataset.action;
+    try {
+      if (action === "export-session") {
+        await downloadSession();
+        setStatus("Session exported.");
+      } else if (action === "import-session") {
+        const r = await pickAndImportSession();
+        if (r) setStatus("Session imported. Reload to apply.");
+      }
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+// ---------- USB killswitch ----------
+function initUsbKillswitch() {
+  // Start the heartbeat if the setting was on and a handle is stored.
+  // The actual folder pick is triggered from a settings button.
+  document.addEventListener("click", async (e) => {
+    const el = e.target.closest("[data-action='usb-pick']");
+    if (!el) return;
+    try {
+      const name = await usb.pickFolder();
+      await usb.start((reason) => {
+        // Trip: redirect to the panic decoy.
+        const s = loadSettings();
+        document.body.innerHTML = "";
+        location.replace(s.panicDecoy);
+      });
+      setStatus("USB killswitch armed on: " + name);
+      saveSettings({ usbKillswitch: true });
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+// ---------- multi-iframe + true title (wired into navigate/stage) ----------
+function onStageOpened() {
+  const frame = $("frame");
+  if (loadSettings().trueTitle) startTitleWatch(frame);
+  startIframeWatch($("stage"), (nestedSrc) => {
+    showToast("Nested frame detected. Open it?", () => {
+      // Navigate the main frame to the nested src (proxied already).
+      window.Lux.navigate(nestedSrc);
+    });
+  });
+}
+function onStageClosed() {
+  stopTitleWatch();
+  stopIframeWatch();
+}
+
+// Minimal toast.
+function showToast(msg, onClick) {
+  let t = document.getElementById("lux-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "lux-toast";
+    t.style.cssText =
+      "position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:60;" +
+      "background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;" +
+      "font-size:13px;display:flex;gap:12px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,0.3)";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = "<span>" + msg + "</span>";
+  const btn = document.createElement("button");
+  btn.textContent = "Open";
+  btn.style.cssText = "background:var(--bg);color:var(--ink);border:0;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px";
+  btn.onclick = () => { if (onClick) onClick(); t.remove(); };
+  t.appendChild(btn);
+  const close = document.createElement("button");
+  close.textContent = "x";
+  close.style.cssText = "background:transparent;color:var(--bg);border:0;cursor:pointer;font-size:14px";
+  close.onclick = () => t.remove();
+  t.appendChild(close);
+  setTimeout(() => { if (t.parentElement) t.remove(); }, 10000);
 }
 
 // ---------- IP badge ----------
@@ -504,7 +599,7 @@ function buildSettingsUi(s) {
 
   body.innerHTML = `
     <div class="group">
-      ${row("Engine", sel("engine", engines.map((e) => ({ v: e.name, t: e.label + (e.available ? "" : " (unavailable)") }))), "Ultraviolet is the default. Scramjet is the newer successor.")}
+      ${row("Engine", sel("engine", engines.map((e) => ({ v: e.name, t: e.label + (e.available ? "" : " (unavailable)") }))), "Ultraviolet is verified working. Scramjet is wired but blocked by a missing wasm; disabled until fixed.")}
       ${row("Search engine", sel("searchEngine", listSearchEngines().map((e) => ({ v: e.id, t: e.label }))), "Used when you type a query, not a URL.")}
     </div>
     <div class="group">
@@ -539,6 +634,16 @@ function buildSettingsUi(s) {
       ${row("Kill switch on network change", toggle("killSwitch"))}
       ${row("Show apparent IP", toggle("showIpBadge"))}
       ${row("Anti-close warning", toggle("antiClose"))}
+      ${row("True title + favicon", toggle("trueTitle"), "Show the proxied site's real title and icon in the tab.")}
+    </div>
+    <div class="group">
+      <label>USB killswitch<small>Pick a USB folder. If it becomes unreadable (USB pulled), Lux redirects to the panic decoy and wipes the session. Chromium only.</small></label>
+      <button class="btn" data-action="usb-pick">Choose USB folder</button>
+      <label>Session transfer<small>Export settings, vault, and login cookies to a file (move via USB). Import restores them on another machine.</small></label>
+      <div style="display:flex;gap:6px">
+        <button class="btn" data-action="export-session">Export</button>
+        <button class="btn" data-action="import-session">Import</button>
+      </div>
     </div>
   `;
 

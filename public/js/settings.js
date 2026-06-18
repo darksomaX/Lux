@@ -35,9 +35,17 @@ export const DEFAULTS = {
   lockOnExit: false,         // re-lock when all tabs close
 
   // Hardening.
-  blockDevtools: true,       // best-effort devtools disruption in locked state
+  blockDevtools: true,       // best-effort devtools disruption (disable to debug)
   panicKey: "Backquote",     // backtick
   panicDecoy: "https://classroom.google.com/",
+
+  // Title/favicon.
+  trueTitle: true,           // show the proxied site's real title + favicon
+  titleExceptions: [],       // hostnames whose real title should never show
+  customIcons: {},           // hostname -> data URL of a custom favicon
+
+  // USB killswitch (Chromium only; File System Access API).
+  usbKillswitch: false,      // trip + wipe if the USB folder becomes unreadable
 
   // Extensions.
   clearUrls: true,           // strip tracking params from links

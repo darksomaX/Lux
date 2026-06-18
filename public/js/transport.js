@@ -28,14 +28,14 @@ export function setTransport(transportPath, options) {
   return ready;
 }
 
-// UV -> Epoxy over wisp. Scramjet -> libcurl over wisp.
-export async function setTransportFor(engineName) {
+// Both engines use Epoxy over wisp. We previously routed Scramjet through
+// libcurl, but @mercuryworkshop/libcurl-transport does not ship its wasm in the
+// npm package (it must be built from source via emscripten), so the transport
+// loaded but failed at wasm instantiation with a 500. Epoxy's wasm IS shipped,
+// and bare-mux makes the transport swappable, so both engines use Epoxy.
+export async function setTransportFor(_engineName) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const wispUrl = `${proto}://${location.host}/wisp/`;
-
-  if (engineName === "scramjet") {
-    return setTransport("/libcurl/index.mjs", [{ websocket: wispUrl }]);
-  }
   return setTransport("/epoxy/index.mjs", [{ wisp: wispUrl }]);
 }
 

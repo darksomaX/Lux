@@ -34,6 +34,18 @@ const uv = {
     if (!("serviceWorker" in navigator)) {
       throw new Error("Service workers are not supported in this browser.");
     }
+    // Unregister any OTHER root-scoped SW (e.g. Scramjet's) so they don't
+    // conflict over the / scope. Only unregister if it's active AND its
+    // script is not uv.sw.js — never unregister an installing UV SW (that
+    // would be unregistering ourselves mid-install).
+    const existing = await navigator.serviceWorker.getRegistrations();
+    for (const reg of existing) {
+      if (!reg.scope.endsWith("/")) continue;
+      const script = reg.active?.scriptUrl || "";
+      if (script && !script.includes("uv.sw.js")) {
+        await reg.unregister();
+      }
+    }
     // Register at scope "/" so the SW can intercept the /service/* proxy path.
     // The server serves uv.sw.js at /uv.sw.js with Service-Worker-Allowed: /
     // to permit this wider scope.
@@ -60,31 +72,45 @@ const uv = {
   },
 };
 
-// ---- Scramjet (optional) --------------------------------------------------
-// Scramjet ships a controller + a separate service worker. We load its bundle
-// lazily and create a frame. Requires libcurl-transport in /libcurl/.
+// ---- Scramjet (optional, currently disabled) ------------------------------
+// Scramjet is wired but NOT verified end to end. Two blockers were found by
+// browser testing:
+//   1. @mercuryworkshop/libcurl-transport does not ship its wasm in the npm
+//      package, so the transport loads but fails at wasm init (500).
+//   2. Two root-scoped service workers (UV's and Scramjet's) cannot reliably
+//      coexist; switching engines races on SW registration.
+// Epoxy works for UV but Scramjet's SW still does not intercept /scramjet/*
+// reliably. Rather than ship a silently-failing option, Scramjet is marked
+// unavailable in the UI until these are resolved. UV is the verified engine.
 
 const scramjet = {
   name: "scramjet",
-  label: "Scramjet",
-  available: typeof $scramjetLoadController === "function" || !!document.querySelector('script[src*="scramjet.bundle"]'),
+  label: "Scramjet (unavailable)",
+  available: false,
 
   _controller: null,
   _frame: null,
 
   async init() {
-    // Lazy-load the Scramjet bundle (900KB) only when this engine is actually
-    // selected. It sets globalThis.$scramjetLoadController.
+    // Lazy-load Scramjet only when this engine is selected. Use scramjet.all.js
+    // (the classic IIFE build that sets globalThis.$scramjetLoadController),
+    // NOT scramjet.bundle.js (the ESM build whose `export` throws when loaded
+    // as a classic script — that was the source of the export console warning).
     if (typeof $scramjetLoadController !== "function") {
-      await loadScript("/scramjet/scramjet.bundle.js");
+      await loadScript("/scramjet/scramjet.all.js");
       if (typeof $scramjetLoadController !== "function") {
         throw new Error("Scramjet bundle failed to load.");
       }
     }
     // Register the Scramjet service worker at scope "/" so it can intercept
     // the proxied paths. The server serves it at /sj.sw.js with
-    // Service-Worker-Allowed: /.
+    // Service-Worker-Allowed: /. Unregister any other root-scoped SW (e.g.
+    // UV's) first, since two root-scoped SWs cannot coexist.
     if ("serviceWorker" in navigator) {
+      const existing = await navigator.serviceWorker.getRegistrations();
+      for (const reg of existing) {
+        if (reg.scope.endsWith("/")) await reg.unregister();
+      }
       await navigator.serviceWorker.register("/sj.sw.js", { scope: "/" });
       await navigator.serviceWorker.ready;
     }
@@ -125,18 +151,31 @@ const scramjet = {
 
 const engines = { uv, scramjet };
 
-let current = null;
+// getEngine reads the current engine from the unified settings store. Do NOT
+// cache the result: the settings UI can change it at runtime, and a stale
+// cache would silently keep using the old engine (the bug that made Scramjet
+// selection appear to do nothing).
 export function getEngine() {
-  if (current) return current;
-  const key = localStorage.getItem("lux.engine") || "uv";
-  current = engines[key] || uv;
-  return current;
+  let key = "uv";
+  try {
+    const raw = localStorage.getItem("lux.settings.v1");
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.engine) key = s.engine;
+    }
+  } catch {}
+  return engines[key] || uv;
 }
 
 export function setEngine(name) {
   if (!engines[name]) throw new Error("Unknown engine: " + name);
-  localStorage.setItem("lux.engine", name);
-  current = engines[name];
+  // Persist through the unified settings so getEngine() sees it.
+  try {
+    const raw = localStorage.getItem("lux.settings.v1");
+    const s = raw ? JSON.parse(raw) : {};
+    s.engine = name;
+    localStorage.setItem("lux.settings.v1", JSON.stringify(s));
+  } catch {}
 }
 
 export function listEngines() {
