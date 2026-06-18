@@ -11,6 +11,18 @@
 
 import { setTransport } from "./transport.js";
 
+// Inject a classic <script> and resolve when it loads. Used to lazy-load the
+// 900KB Scramjet bundle only when that engine is selected.
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load " + src));
+    document.head.appendChild(s);
+  });
+}
+
 // ---- Ultraviolet ----------------------------------------------------------
 
 const uv = {
@@ -61,8 +73,13 @@ const scramjet = {
   _frame: null,
 
   async init() {
+    // Lazy-load the Scramjet bundle (900KB) only when this engine is actually
+    // selected. It sets globalThis.$scramjetLoadController.
     if (typeof $scramjetLoadController !== "function") {
-      throw new Error("Scramjet bundle not loaded. Add it in settings or choose Ultraviolet.");
+      await loadScript("/scramjet/scramjet.bundle.js");
+      if (typeof $scramjetLoadController !== "function") {
+        throw new Error("Scramjet bundle failed to load.");
+      }
     }
     // Register the Scramjet service worker at scope "/" so it can intercept
     // the proxied paths. The server serves it at /sj.sw.js with

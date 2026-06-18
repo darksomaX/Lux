@@ -153,16 +153,30 @@ function initChrome() {
   };
   document.addEventListener("click", () => $("help-tip").classList.remove("open"));
 
-  // bar app switching: clicking an active app focuses it; only Browser is
-  // open by default. Future tabs get added here dynamically.
+  // bar app switching. Each app opens its panel; Browser shows the stage.
+  // Only Browser is active by default.
   document.querySelectorAll(".bar-app").forEach((b) => {
     b.onclick = () => {
       document.querySelectorAll(".bar-app").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
       const app = b.dataset.app;
-      if (app === "browser") {
-        // show the stage if there is a current target, else go home
-        if (currentTarget) $("stage").classList.add("active");
+      closeAllPanels();
+      switch (app) {
+        case "browser":
+          if (currentTarget) $("stage").classList.add("active");
+          else $("stage").classList.remove("active");
+          break;
+        case "notes":
+          openPanel("panel-editor");
+          break;
+        case "vault":
+          openPanel("panel-vault");
+          renderVault();
+          break;
+        case "games":
+          openPanel("panel-games");
+          renderGamesHome();
+          break;
       }
     };
   });

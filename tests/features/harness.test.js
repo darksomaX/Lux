@@ -120,7 +120,7 @@ async function main() {
     src: m[1], tag: m[0],
   }));
   ok("index.html serves", idx.code === 200);
-  ok("index.html has 4 script tags", scripts.length === 4, "got " + scripts.length);
+  ok("index.html has 3 render-blocking script tags (Scramjet lazy-loaded)", scripts.length === 3, "got " + scripts.length);
   // uv.bundle.js must come before uv.config.js (config references Ultraviolet)
   const bundleIdx = scripts.findIndex((s) => s.src.endsWith("uv.bundle.js"));
   const configIdx = scripts.findIndex((s) => s.src.endsWith("uv.config.js"));

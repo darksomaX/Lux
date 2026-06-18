@@ -15,6 +15,7 @@
 //   HOST      listen host (default 0.0.0.0)
 
 import express from "express";
+import compression from "compression";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
@@ -37,6 +38,8 @@ const app = express();
 
 // Count each unique connection toward the active-user stat, keyed by Host so
 // multi-domain deployments can see per-hostname load.
+// gzip all responses — uv.bundle alone drops from 379KB to 110KB on the wire.
+app.use(compression());
 app.use((req, res, next) => {
   const host = req.headers.host || "unknown";
   userConnected(host);

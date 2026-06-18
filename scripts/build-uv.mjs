@@ -68,6 +68,31 @@ if (existsSync(uvConfigPath)) {
   console.log("OK rewrote uv.config.js paths -> /uv/*");
 }
 
+// Make uv.sw.js self-contained AND wire its fetch handler. The npm package's
+// uv.sw.js (a) opens with `var h = self.Ultraviolet`, which is undefined in the
+// isolated SW scope unless we importScripts the bundle, and (b) defines
+// self.UVServiceWorker as a class but never instantiates it or attaches a
+// fetch listener. The canonical Ultraviolet-App has a separate sw.js that does
+// both. We prepend importScripts and append the instantiation + listener.
+const uvSwPath = join(root, "public/uv/uv.sw.js");
+if (existsSync(uvSwPath)) {
+  let swSrc = await readFile(uvSwPath, "utf8");
+  if (!swSrc.startsWith("importScripts")) {
+    const wiring =
+      'importScripts("/uv/uv.bundle.js", "/uv/uv.config.js");\n' +
+      swSrc +
+      '\n// Wire the fetch handler (appended by build-uv.mjs).\n' +
+      'const uvSW = new self.UVServiceWorker();\n' +
+      'self.addEventListener("fetch", (event) => {\n' +
+      '  if (uvSW.route({ request: event.request })) {\n' +
+      '    event.respondWith(uvSW.fetch({ request: event.request }));\n' +
+      '  }\n' +
+      '});\n';
+    await writeFile(uvSwPath, wiring);
+    console.log("OK made uv.sw.js self-contained + wired fetch handler");
+  }
+}
+
 if (failed) {
   console.error("\nBuild failed. Run `npm install` first.");
   process.exit(1);

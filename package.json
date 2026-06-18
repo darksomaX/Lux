@@ -27,6 +27,7 @@
     "@mercuryworkshop/scramjet": "^1.1.0",
     "@mercuryworkshop/wisp-js": "^0.4.1",
     "@titaniumnetwork-dev/ultraviolet": "^3.2.7",
+    "compression": "^1.8.1",
     "express": "^4.21.2"
   },
   "keywords": [
