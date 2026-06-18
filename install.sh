@@ -54,6 +54,42 @@ npm install
 echo "Building client bundles..."
 npm run build
 
+# --- integrity check --------------------------------------------------------
+# Compute a SHA-256 of every tracked source file (excluding node_modules and
+# build artifacts). This lets the user confirm their copy matches what was
+# cloned, detecting any in-flight tampering or interception.
+echo ""
+echo "Computing integrity hash of source files..."
+if command -v sha256sum >/dev/null 2>&1; then
+  HASH=$(find . -type f \
+    -not -path "./node_modules/*" \
+    -not -path "./.git/*" \
+    -not -path "./public/uv/*" \
+    -not -path "./public/baremux/*" \
+    -not -path "./public/epoxy/*" \
+    -not -path "./public/scramjet/*" \
+    -not -path "./public/libcurl/*" \
+    -not -name "package-lock.json" \
+    -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1)
+  echo "  Source integrity (SHA-256): $HASH"
+  echo "  Verify this matches the hash published in the release notes."
+  echo "  If it differs, your download may have been tampered with."
+elif command -v shasum >/dev/null 2>&1; then
+  HASH=$(find . -type f \
+    -not -path "./node_modules/*" \
+    -not -path "./.git/*" \
+    -not -path "./public/uv/*" \
+    -not -path "./public/baremux/*" \
+    -not -path "./public/epoxy/*" \
+    -not -path "./public/scramjet/*" \
+    -not -path "./public/libcurl/*" \
+    -not -name "package-lock.json" \
+    -exec shasum -a 256 {} \; | sort | shasum -a 256 | cut -d' ' -f1)
+  echo "  Source integrity (SHA-256): $HASH"
+else
+  echo "  (sha256sum not available; skipping integrity check)"
+fi
+
 # --- done -------------------------------------------------------------------
 PORT="${PORT:-8080}"
 cat <<EOF

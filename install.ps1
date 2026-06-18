@@ -47,6 +47,27 @@ Write-Host "Building client bundles..."
 npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "build failed." -ForegroundColor Red; exit 1 }
 
+# Integrity check: SHA-256 of all source files (excluding deps + build output).
+Write-Host ""
+Write-Host "Computing integrity hash of source files..." -ForegroundColor White
+$files = Get-ChildItem -Recurse -File |
+  Where-Object {
+    $_.FullName -notmatch "node_modules" -and
+    $_.FullName -notmatch "\\.git\\" -and
+    $_.FullName -notmatch "public\\uv\\" -and
+    $_.FullName -notmatch "public\\baremux\\" -and
+    $_.FullName -notmatch "public\\epoxy\\" -and
+    $_.FullName -notmatch "public\\scramjet\\" -and
+    $_.FullName -notmatch "public\\libcurl\\" -and
+    $_.Name -ne "package-lock.json"
+  } | Sort-Object FullName
+$hashes = $files | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash + "  " + $_.Name }
+$combined = $hashes -join "`n"
+$final = (Get-FileHash -Algorithm SHA256 -InputStream ([System.IO.MemoryStream]::new([System.Text.Encoding]::UTF8.GetBytes($combined)))).Hash
+Write-Host "  Source integrity (SHA-256): $final" -ForegroundColor Cyan
+Write-Host "  Verify this matches the hash in the release notes." -ForegroundColor Gray
+Write-Host "  If it differs, your download may have been tampered with." -ForegroundColor Gray
+
 Pop-Location
 
 $Port = if ($env:PORT) { $env:PORT } else { "8080" }

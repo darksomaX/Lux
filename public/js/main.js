@@ -300,6 +300,43 @@ function initStage() {
     if (s.lockOnExit) lock();
   };
   $("bar-home").onclick = () => $("stage-close").click();
+  initTrueUrlReveal();
+}
+
+// ---------- true URL reveal ----------
+// Double-tap Control (or hold a configurable key) to flash the real (decoded)
+// destination URL in the crumb bar for 2 seconds. Useful to confirm where you
+// actually are without leaving the proxied session.
+function initTrueUrlReveal() {
+  let lastCtrl = 0;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Control") return;
+    const now = Date.now();
+    if (now - lastCtrl < 400) {
+      // Double-tap detected.
+      flashTrueUrl();
+      lastCtrl = 0;
+    } else {
+      lastCtrl = now;
+    }
+  });
+}
+
+function flashTrueUrl() {
+  if (!currentTarget) return;
+  const crumb = $("stage-crumb");
+  if (!crumb) return;
+  const original = crumb.textContent;
+  crumb.textContent = currentTarget;
+  crumb.style.color = "var(--accent)";
+  crumb.style.fontFamily = "ui-monospace, monospace";
+  crumb.style.fontSize = "12px";
+  setTimeout(() => {
+    crumb.textContent = original;
+    crumb.style.color = "";
+    crumb.style.fontFamily = "";
+    crumb.style.fontSize = "";
+  }, 2000);
 }
 
 // ---------- lock ----------

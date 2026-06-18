@@ -58,13 +58,14 @@ ok("service worker is active", swReady.startsWith("active"), "got " + swReady);
 await page.fill("#search-input", TARGET);
 await page.press("#search-input", "Enter");
 
-// 4. Wait for the stage/iframe to appear and for navigation to begin. The
-//    proxied load can take several seconds (SW install + wisp + TLS).
-await wait(8000);
-
-// 5. Inspect the iframe. It is same-origin (Lux serves it), so we can read its
-//    contentDocument once UV has navigated it.
-const stageActive = await page.evaluate(() => document.getElementById("stage").classList.contains("active"));
+// 4. Wait for the stage to become active (poll, since the SW+wisp load time
+//    varies). Cap at 15s.
+let stageActive = false;
+for (let i = 0; i < 30; i++) {
+  stageActive = await page.evaluate(() => document.getElementById("stage").classList.contains("active"));
+  if (stageActive) break;
+  await wait(500);
+}
 ok("stage became active after submit", stageActive);
 
 let frameContent = "";

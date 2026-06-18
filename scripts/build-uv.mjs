@@ -100,6 +100,9 @@ if (failed) {
 
 // Write the Scramjet service worker into public/scramjet/ (the recursive copy
 // above only pulls files from the npm package, which does not ship an sw.js).
+// clients.claim() is critical: without it, a freshly-registered SW does not
+// control the existing page until the next navigation, so /scramjet/* requests
+// fell through to Express 404. This was the real Scramjet blocker.
 const scramjetSw = join(root, "public/scramjet/sw.js");
 await writeFile(
   scramjetSw,
@@ -114,6 +117,9 @@ async function handleRequest(event) {
 }
 self.addEventListener("fetch", (event) => {
   event.respondWith(handleRequest(event));
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
 });
 `
 );

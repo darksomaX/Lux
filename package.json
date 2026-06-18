@@ -1,6 +1,6 @@
 {
   "name": "lux",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Lux. A self-hostable anti-censorship web proxy with a lock, cloak, encrypted vault, and engine switching.",
   "type": "module",
   "main": "server/index.js",

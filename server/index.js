@@ -21,6 +21,8 @@ import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import { server as wisp, logging as wispLogging } from "@mercuryworkshop/wisp-js/server";
 import { statsJson, statsSse, userConnected, userDisconnected } from "./stats.js";
+import { config } from "./config.js";
+import { createSession, verifySession, sessionExists } from "./sessions.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = dirname(__dirname);
@@ -29,12 +31,48 @@ const publicDir = join(root, "public");
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || "0.0.0.0";
 
+// Minimal login page for shared mode. No external dependencies.
+const LOGIN_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lux</title>
+<style>body{margin:0;height:100dvh;display:flex;align-items:center;justify-content:center;background:#fbfbfa;font-family:Georgia,serif}form{display:flex;flex-direction:column;gap:14px;align-items:center}input{width:240px;height:44px;border:1px solid #e8e8e6;border-radius:999px;text-align:center;font-size:16px;outline:none;background:transparent;color:#1a1a1a}input:focus{border-color:#6b6b6b}button{height:44px;padding:0 24px;border:0;border-radius:999px;background:#1a1a1a;color:#fbfbfa;font-size:14px;cursor:pointer}</style>
+</head><body><form id="f"><input id="p" type="password" placeholder=" " maxlength="64" autofocus><button type="submit">Enter</button></form>
+<script>document.getElementById("f").onsubmit=async(e)=>{e.preventDefault();const p=document.getElementById("p").value;const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p})});if(r.ok){location.href="/";}else{document.getElementById("p").value="";document.getElementById("p").placeholder="try again";}};</script>
+</body></html>`;
+
 // Quieter wisp logs in production; keep INFO for debugging locally.
 if (process.env.NODE_ENV === "production") {
   wispLogging.set_level(wispLogging.WARN);
 }
 
 const app = express();
+
+// In shared mode, gate every request behind a session cookie. The login page
+// and the session-create endpoint are exempt. In single mode, no auth.
+const MODE = config.mode || "single";
+if (MODE === "shared") {
+  app.use((req, res, next) => {
+    // Exempt the login page and the API endpoints.
+    if (req.path === "/login" || req.path === "/api/session" || req.path === "/health") {
+      return next();
+    }
+    // Check the session cookie.
+    const sid = parseCookie(req.headers.cookie || "", "lux_sid");
+    if (sid && sessionExists(sid)) return next();
+    // No valid session: redirect to login.
+    if (req.path.startsWith("/api/") || req.headers.accept?.includes("application/json")) {
+      return res.status(401).json({ error: "no session" });
+    }
+    return res.redirect("/login");
+  });
+  console.log("  Mode: shared (session auth required)");
+}
+
+function parseCookie(header, name) {
+  for (const part of header.split(";")) {
+    const [k, v] = part.trim().split("=");
+    if (k === name) return v;
+  }
+  return null;
+}
 
 // Count each unique connection toward the active-user stat, keyed by Host so
 // multi-domain deployments can see per-hostname load.
@@ -96,6 +134,33 @@ app.get("/stats/stream", statsSse);
 
 // Health check for deploy platforms (Render/Railway/Fly uptime probes).
 app.get("/health", (req, res) => res.json({ ok: true }));
+
+// Session creation (shared mode). POST { password } -> { sessionId, expires }.
+// The session cookie is set; subsequent requests are authenticated.
+app.use("/api/session", (req, res, next) => {
+  if (req.method === "POST") {
+    express.json({ limit: "64kb" })(req, res, (err) => {
+      if (err) return res.status(400).json({ error: "invalid body" });
+      const password = typeof req.body.password === "string" ? req.body.password.slice(0, 64) : "";
+      const { id, expires } = createSession(password);
+      res.cookie("lux_sid", id, {
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: expires - Date.now(),
+      });
+      res.json({ sessionId: id, expires });
+    });
+  } else if (req.method === "GET") {
+    res.json({ mode: MODE });
+  } else {
+    next();
+  }
+});
+
+// Login page (shared mode). A minimal form that POSTs to /api/session.
+app.get("/login", (req, res) => {
+  res.type("html").send(LOGIN_HTML);
+});
 
 // Egress IP echo. Used by the kill switch and the IP badge. Returns the
 // client's apparent IP (as the server sees it). Behind a reverse proxy, we

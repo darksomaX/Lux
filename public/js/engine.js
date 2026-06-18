@@ -23,6 +23,47 @@ function loadScript(src) {
   });
 }
 
+// Delete an IndexedDB with a hard 3s timeout so a blocked connection can't
+// hang the engine init forever.
+function deleteDbWithTimeout(name) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    try {
+      const req = indexedDB.deleteDatabase(name);
+      req.onsuccess = finish;
+      req.onerror = finish;
+      req.onblocked = finish;
+    } catch { finish(); }
+    setTimeout(finish, 3000);
+  });
+}
+
+// Wait until navigator.serviceWorker.controller is a SW whose script URL
+// contains the given marker (e.g. "uv.sw.js" or "sj.sw.js"). The controller
+// is what actually intercepts fetches for this page; .ready is not enough.
+// Times out after 8s (then proceeds — the navigation may still work after a
+// reload, and we don't want to hang forever).
+function waitForController(marker) {
+  return new Promise((resolve) => {
+    if (navigator.serviceWorker.controller) {
+      const url = navigator.serviceWorker.controller.scriptURL || "";
+      if (url.includes(marker)) return resolve();
+    }
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const handler = () => {
+      const c = navigator.serviceWorker.controller;
+      if (c && (c.scriptURL || "").includes(marker)) {
+        navigator.serviceWorker.removeEventListener("controllerchange", handler);
+        finish();
+      }
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", handler);
+    setTimeout(finish, 8000);
+  });
+}
+
 // ---- Ultraviolet ----------------------------------------------------------
 
 const uv = {
@@ -54,6 +95,8 @@ const uv = {
       updateViaCache: "all",
     });
     await navigator.serviceWorker.ready;
+    // Wait for the UV SW to actually control this page (not just be active).
+    await waitForController("uv.sw.js");
     return reg;
   },
 
@@ -72,20 +115,27 @@ const uv = {
   },
 };
 
-// ---- Scramjet (optional, currently disabled) ------------------------------
-// Scramjet is wired but NOT verified end to end. Two blockers were found by
-// browser testing:
-//   1. @mercuryworkshop/libcurl-transport does not ship its wasm in the npm
-//      package, so the transport loads but fails at wasm init (500).
-//   2. Two root-scoped service workers (UV's and Scramjet's) cannot reliably
-//      coexist; switching engines races on SW registration.
-// Epoxy works for UV but Scramjet's SW still does not intercept /scramjet/*
-// reliably. Rather than ship a silently-failing option, Scramjet is marked
-// unavailable in the UI until these are resolved. UV is the verified engine.
+// ---- Scramjet (optional) --------------------------------------------------
+// Scramjet is the newer interception proxy by the same authors as UV. It uses
+// a runtime-injection rewriter (realm pollution + proxies) rather than UV's
+// URL-string rewriting, and its own service worker + controller.
+//
+// The previous blocker was SW control timing: navigator.serviceWorker.ready
+// resolves when the SW is "active" but NOT when it "controls" the page. Without
+// control, /scramjet/* requests fall through to Express. The fix is twofold:
+//   1. The SJ SW calls clients.claim() on activate (build-uv.mjs).
+//   2. init() waits for navigator.serviceWorker.controller to become the SJ SW
+//      before returning, using the controllerchange event.
 
 const scramjet = {
   name: "scramjet",
   label: "Scramjet (unavailable)",
+  // Scramjet v1's controller has a bug: on a fresh IndexedDB it opens the DB
+  // without creating the object stores it then tries to transaction on
+  // ("object store not found"). v2 is alpha-only with no reference app. The
+  // SW registration + clients.claim + waitForController work, but the
+  // controller init throws. Disabled until v1 is patched upstream or v2
+  // stabilizes. UV is the verified engine.
   available: false,
 
   _controller: null,
@@ -95,26 +145,32 @@ const scramjet = {
     // Lazy-load Scramjet only when this engine is selected. Use scramjet.all.js
     // (the classic IIFE build that sets globalThis.$scramjetLoadController),
     // NOT scramjet.bundle.js (the ESM build whose `export` throws when loaded
-    // as a classic script — that was the source of the export console warning).
+    // as a classic script).
     if (typeof $scramjetLoadController !== "function") {
       await loadScript("/scramjet/scramjet.all.js");
       if (typeof $scramjetLoadController !== "function") {
         throw new Error("Scramjet bundle failed to load.");
       }
     }
-    // Register the Scramjet service worker at scope "/" so it can intercept
-    // the proxied paths. The server serves it at /sj.sw.js with
-    // Service-Worker-Allowed: /. Unregister any other root-scoped SW (e.g.
-    // UV's) first, since two root-scoped SWs cannot coexist.
     if ("serviceWorker" in navigator) {
+      // Unregister any other root-scoped SW (e.g. UV's).
       const existing = await navigator.serviceWorker.getRegistrations();
       for (const reg of existing) {
-        if (reg.scope.endsWith("/")) await reg.unregister();
+        const script = reg.active?.scriptUrl || "";
+        if (reg.scope.endsWith("/") && script && !script.includes("sj.sw.js")) {
+          await reg.unregister();
+        }
       }
       await navigator.serviceWorker.register("/sj.sw.js", { scope: "/" });
       await navigator.serviceWorker.ready;
+      // CRITICAL: wait until the SJ SW actually controls this page. Without
+      // this, /scramjet/* navigations are not intercepted.
+      await waitForController("sj.sw.js");
     }
     if (!this._controller) {
+      // Delete the "scramjet" DB with a hard timeout so a blocked delete can't
+      // hang init forever. The controller recreates it fresh on init.
+      await deleteDbWithTimeout("scramjet");
       const { ScramjetController } = $scramjetLoadController();
       this._controller = new ScramjetController({
         files: {
@@ -123,7 +179,11 @@ const scramjet = {
           sync: "/scramjet/scramjet.sync.js",
         },
       });
-      await this._controller.init();
+      // Race the init against a timeout so we never hang silently.
+      await Promise.race([
+        this._controller.init(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Scramjet controller init timed out")), 30000)),
+      ]);
     }
     return this._controller;
   },
