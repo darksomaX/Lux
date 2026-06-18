@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Lux works</title>
+<link rel="preload" href="/assets/lora-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/lora-700-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face { font-family: "Lora"; font-style: normal; font-weight: 400; font-display: swap; src: url("/assets/lora-400-latin.woff2") format("woff2"); }
+  @font-face { font-family: "Lora"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/lora-700-latin.woff2") format("woff2"); }
+  body { background: #fbfbfa; color: #1a1a1a; font: 17px/1.65 "Lora", Georgia, serif; margin: 0; padding: 48px 20px; }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 30px; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 36px 0 6px; }
+  .lede { color: #6b6b6b; margin: 0 0 24px; font-size: 15px; }
+  p { margin: 0 0 16px; }
+  code { background: #ececec; padding: 2px 6px; border-radius: 4px; font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: #f2f2ef; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 14px; }
+  .step { background: #f7f7f5; border: 1px solid #e8e8e6; border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .step b { color: #1a1a1a; }
+  .warn { background: #fdf3f1; border-color: #f3d9d2; }
+  ul { padding-left: 20px; }
+  a { color: #1a1a1a; }
+  .back { display: inline-block; margin-bottom: 24px; color: #6b6b6b; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&larr; Back to Lux</a>
+  <h1>How Lux works</h1>
+  <p class="lede">A short, plain explanation of what happens when you type a URL.</p>
+
+  <p>Lux is a web proxy. Your browser loads blocked sites by sending the requests through a server you control instead of contacting the site directly. The hard part is hiding that detour from the network censor and from the browser itself.</p>
+
+  <h2>The four pieces</h2>
+
+  <div class="step">
+    <b>1. The service worker.</b> When Lux opens, the page installs a small script called a service worker. That script sits between the page and the network. Every request the page makes passes through it first. The worker rewrites the destination into an obfuscated path and sends the rewritten request through the tunnel in step 3, instead of letting the browser fetch the site directly. The censor never sees the browser talk to the real site, so a block on that site never fires.
+  </div>
+
+  <div class="step">
+    <b>2. URL rewriting and obfuscation.</b> A request for <code>wikipedia.org</code> turns into something like <code>/service/hvtrs8%2F-wkkkpgdka...</code>. The gibberish is the real URL run through an encoder. Lux defaults to an XOR encoder and lets you switch to a base64 "math" disguise, a plain form for debugging, or no path at all (iframe chains). Two things follow. The censor's URL filter does not see the word "wikipedia", and the address bar shows <code>/service/...</code> rather than the destination. The worker decodes the path on the way back so links inside the page keep working.
+  </div>
+
+  <div class="step">
+    <b>3. The wisp and Epoxy tunnel.</b> The rewritten request cannot go straight to wikipedia.org, because that is what is blocked. Instead the service worker opens one WebSocket to <code>/wisp/</code> on your server. The wisp protocol carries many streams inside that one socket. On top of wisp runs Epoxy (or libcurl, for the Scramjet engine), which performs the actual HTTPS and WebSocket exchange with the destination, including the TLS handshake. The net effect is that all proxied traffic looks like one ordinary encrypted <code>wss://</code> connection to your own domain. To the censor it reads the same as any visit to a secure site.
+  </div>
+
+  <div class="step">
+    <b>4. The cloak.</b> The Cloak button opens the proxied session inside a popup whose address reads <code>about:blank</code> and whose history is empty. Screen-share monitoring sees a blank tab. Tab disguise swaps the title and favicon to look like Google Classroom or a similar site. The panic key jumps to a decoy the moment you press it. Anti-close adds a leave warning.
+  </div>
+
+  <h2>What Lux gets past</h2>
+  <ul>
+    <li><b>IP and hostname blocklists</b> (the most common kind): yes. The browser only ever talks to your server.</li>
+    <li><b>URL and SNI string filtering</b>: yes. The destination hostname is encoded, and the only cleartext hostname is yours.</li>
+    <li><b>DPI that hunts for proxy traffic</b>: harder. The tunnel is a normal WSS connection to a domain you control. Rotating the encoder and the domain makes fingerprinting harder still.</li>
+    <li><b>Logins</b> (Gmail, OAuth): work, because all traffic is same-origin to your domain, so cross-site cookie and redirect flows resolve correctly. Epoxy and libcurl handle the TLS that a bare relay cannot.</li>
+  </ul>
+
+  <h2>What Lux does not get past</h2>
+  <div class="step warn">
+    A censor that runs <b>active probes</b> (connecting to your server and testing whether it proxies) can still identify it. A censor that blocks <b>your specific domain</b> can stop you, which is why Lux is built to redeploy to a fresh domain in minutes. Lux is <b>not</b> anonymous like Tor. The server operator (you) can see connection metadata. For source protection, layer Lux with Tor or a VPN. Use it lawfully and ethically.
+  </div>
+
+  <h2>Run your own</h2>
+  <pre>git clone https://github.com/darksomaX/Lux
+cd Lux
+npm install
+npm run build:uv
+npm start        # http://localhost:8080</pre>
+  <p>Deploy to Replit, Render, Railway, Fly.io, or any VPS. See the README for the configs. Vercel does not work for the full proxy: its serverless functions cannot hold the persistent WebSocket the wisp tunnel needs.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,83 @@
+// Lux settings. Everything user-configurable lives here, persisted in
+// localStorage under the "lux." namespace. Defaults are chosen so the app
+// is usable on first load (no setup required) and secure by default
+// (lock mode on, cold start requires a phrase).
+
+const KEY = "lux.settings.v1";
+
+export const DEFAULTS = {
+  // Which interception engine to use: "uv" or "scramjet".
+  engine: "uv",
+
+  // Which search engine queries go to.
+  searchEngine: "duckduckgo",
+
+  // How the proxied URL path looks in the address bar.
+  //   "encoded"  -> /service/<xor>           (UV default, obfuscated)
+  //   "plain"    -> /service/https://site    (readable, for debugging)
+  //   "math"     -> /math/<base64>           (looks like a math app)
+  //   "none"     -> no proxy path shown; uses iframe chains only
+  urlScheme: "encoded",
+  customPrefix: "/service/",
+
+  // Appearance.
+  theme: "light",            // "light" | "dark"
+  background: "dots",        // "dots" | "stars" | "none"
+  showDock: true,            // macOS-style tools dock
+  fullscreenMode: "off",     // "off" | "page" | "full"
+  windowChrome: "macos",     // "macos" | "windows"
+
+  // Lock / panic.
+  lockEnabled: true,         // require phrase on cold start
+  lockPhrase: "a",           // minimal default; user changes it
+  lockOnIdle: true,          // re-lock after idle
+  lockIdleMinutes: 5,
+  lockOnExit: false,         // re-lock when all tabs close
+
+  // Hardening.
+  blockDevtools: true,       // best-effort devtools disruption in locked state
+  panicKey: "Backquote",     // backtick
+  panicDecoy: "https://classroom.google.com/",
+
+  // Extensions.
+  clearUrls: true,           // strip tracking params from links
+  adBlock: true,             // lightweight element/hostname blocking
+  eventHandling: true,       // allow sites' event listeners (disable = freeze overlays)
+  googleOptOut: true,        // set Google opt-out cookie
+  killSwitch: true,          // halt traffic if the network changes until verified
+
+  // Privacy display.
+  showIpBadge: true,         // show prev vs current apparent IP
+
+  // Cloak.
+  antiClose: false,
+};
+
+let cache = null;
+
+export function loadSettings() {
+  if (cache) return cache;
+  try {
+    const raw = localStorage.getItem(KEY);
+    cache = raw ? { ...DEFAULTS, ...JSON.parse(raw) } : { ...DEFAULTS };
+  } catch {
+    cache = { ...DEFAULTS };
+  }
+  return cache;
+}
+
+export function saveSettings(partial) {
+  const next = { ...loadSettings(), ...partial };
+  cache = next;
+  localStorage.setItem(KEY, JSON.stringify(next));
+  // Let other modules react.
+  window.dispatchEvent(new CustomEvent("lux:settings", { detail: next }));
+  return next;
+}
+
+export function resetSettings() {
+  cache = { ...DEFAULTS };
+  localStorage.removeItem(KEY);
+  window.dispatchEvent(new CustomEvent("lux:settings", { detail: cache }));
+  return cache;
+}

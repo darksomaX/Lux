@@ -1,0 +1,9 @@
+node_modules
+public/uv
+public/baremux
+public/epoxy
+.git
+.gitignore
+*.md
+tests
+scripts/balcheck.mjs

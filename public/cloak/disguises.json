@@ -1,0 +1,34 @@
+{
+  "google": {
+    "title": "Google",
+    "favicon": "https://www.google.com/favicon.ico"
+  },
+  "classroom": {
+    "title": "Classes",
+    "favicon": "https://ssl.gstatic.com/classroom/favicon.png"
+  },
+  "docs": {
+    "title": "Untitled document - Google Docs",
+    "favicon": "https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico"
+  },
+  "drive": {
+    "title": "My Drive - Google Drive",
+    "favicon": "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png"
+  },
+  "gmail": {
+    "title": "Inbox (1) - user@gmail.com - Gmail",
+    "favicon": "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico"
+  },
+  "khan": {
+    "title": "Khan Academy | Free Online Courses, Lessons & Practice",
+    "favicon": "https://cdn.kastatic.org/images/favicon.ico"
+  },
+  "outlook": {
+    "title": "Outlook",
+    "favicon": "https://outlook.live.com/favicon.ico"
+  },
+  "canvas": {
+    "title": "Dashboard",
+    "favicon": "https://du11hjcvx0uqb.cloudfront.net/dist/images/favicon-e10d657a73.ico"
+  }
+}
