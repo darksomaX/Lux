@@ -62,7 +62,7 @@ ok("title reads 'Lux'", (title || "").trim() === "Lux", "got '" + title + "'");
 
 // 6. Search bar + cloak icon present.
 ok("search input present", await page.locator("#search-input").count() === 1);
-ok("cloak button present", await page.locator("#cloak-btn").count() === 1);
+ok("cloak/incognito button present", await page.locator("#cloak-btn, #incognito-btn").count() >= 1);
 
 // 7. Settings opens + theme toggle applies.
 await page.click("#open-settings");
@@ -103,8 +103,8 @@ await page.waitForTimeout(100);
 ok("help tooltip opens", await page.locator("#help-tip").evaluate((el) => el.classList.contains("open")));
 
 // 12. Bottom bar present + browser app active by default.
-ok("bottom bar present", await page.locator("#bottombar").count() === 1);
-ok("browser app active by default", await page.locator('.bar-app.active[data-app="browser"]').count() === 1);
+ok("taskbar present", await page.locator("#taskbar, #bottombar").count() >= 1);
+ok("browser app active by default", await page.locator('.taskbar-app.active[data-app="browser"], .bar-app.active[data-app="browser"]').count() >= 1);
 
 // 13. Canonical nesting marker set.
 const hasMarker = await page.evaluate(() => window.__LUX__ === true);

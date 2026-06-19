@@ -10,15 +10,16 @@ export const DEFAULTS = {
   engine: "uv",
 
   // Which search engine queries go to.
-  searchEngine: "duckduckgo",
+  searchEngine: "startpage",
 
   // How the proxied URL path looks in the address bar.
-  //   "encoded"  -> /service/<xor>           (UV default, obfuscated)
-  //   "plain"    -> /service/https://site    (readable, for debugging)
-  //   "math"     -> /math/<base64>           (looks like a math app)
+  //   "encoded"  -> /s/<xor>                (UV default, obfuscated, prefix /s/)
+  //   "plain"    -> /s/https://site         (readable, for debugging)
   //   "none"     -> no proxy path shown; uses iframe chains only
+  // The "math" disguise was removed — it added complexity for little benefit.
+  // The prefix is set in uv.config.js (built as /s/ by build-uv.mjs).
   urlScheme: "encoded",
-  customPrefix: "/service/",
+  customPrefix: "/s/",
 
   // Appearance.
   theme: "light",            // "light" | "dark"
@@ -30,6 +31,7 @@ export const DEFAULTS = {
   // Lock / panic.
   lockEnabled: true,         // require phrase on cold start
   lockPhrase: "a",           // minimal default; user changes it
+  lockPassword: "",          // new create-password flow (overrides lockPhrase)
   lockOnIdle: true,          // re-lock after idle
   lockIdleMinutes: 5,
   lockOnExit: false,         // re-lock when all tabs close
@@ -56,6 +58,9 @@ export const DEFAULTS = {
 
   // Privacy display.
   showIpBadge: true,         // show prev vs current apparent IP
+
+  // Taskbar.
+  taskbarHide: false,        // auto-hide taskbar on hover
 
   // Cloak.
   antiClose: false,

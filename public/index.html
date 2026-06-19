@@ -7,308 +7,110 @@
 <title>Lux</title>
 <link rel="preload" href="/assets/lora-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/lora-700-latin.woff2" as="font" type="font/woff2" crossorigin>
-<style>
-  @font-face { font-family: "Lora"; font-style: normal; font-weight: 400; font-display: swap; src: url("/assets/lora-400-latin.woff2") format("woff2"); }
-  @font-face { font-family: "Lora"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/lora-500-latin.woff2") format("woff2"); }
-  @font-face { font-family: "Lora"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/lora-700-latin.woff2") format("woff2"); }
-  :root {
-    --bg: #fbfbfa; --ink: #1a1a1a; --ink-soft: #6b6b6b; --line: #e8e8e6;
-    --accent: #1a1a1a; --danger: #b42318; --ok: #15702a;
-    --r: 999px; --r-card: 14px;
-    --font: "Lora", Georgia, "Times New Roman", serif;
-    --tap: 40px;
-    --frame-border: 1px solid var(--line);
-  }
-  body[data-theme="dark"] { --bg: #0d0d0f; --ink: #ececec; --ink-soft: #9a9a9a; --line: #232327; --accent: #ececec; }
-  /* window chrome themes */
-  body[data-chrome="windows"] { --frame-border: 1px solid #d1d1d1; }
-  body[data-chrome="windows"] .win-dots { display: none; }
-
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; overscroll-behavior: none; }
-  body {
-    background: var(--bg); color: var(--ink); font-family: var(--font);
-    font-optical-sizing: auto; -webkit-font-smoothing: antialiased;
-    display: flex; flex-direction: column; min-height: 100dvh;
-    transition: background 0.4s ease, color 0.4s ease;
-  }
-  /* dotted field (light default) */
-  #dots { position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background-image: radial-gradient(var(--line) 1px, transparent 1px);
-    background-size: 26px 26px; opacity: 0.9; }
-  body[data-bg="stars"] #dots, body[data-bg="none"] #dots { display: none; }
-  canvas#sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
-  body[data-bg="stars"] canvas#sky { display: block; }
-
-  /* ---------- MAIN CONTAINER (everything user-facing lives here) ---------- */
-  #main-container {
-    position: relative; z-index: 4;
-    flex: 1; display: flex; flex-direction: column;
-    padding-bottom: 64px; /* leaves room for the bottom bar */
-    overflow: hidden;
-  }
-
-  /* corner controls */
-  .corner { position: absolute; top: 16px; z-index: 6; display: flex; gap: 8px; }
-  .corner.left { left: 16px; }
-  .corner.right { right: 16px; }
-  .corner-bl { position: absolute; bottom: 16px; left: 16px; z-index: 6; }
-  .corner-br { position: absolute; bottom: 16px; right: 16px; z-index: 6; }
-  .iconbtn {
-    width: var(--tap); height: var(--tap); border-radius: 10px;
-    border: 1px solid transparent; background: transparent; color: var(--ink-soft);
-    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-  }
-  .iconbtn:hover, .iconbtn:focus-visible { background: var(--line); color: var(--ink); outline: none; border-color: var(--line); }
-  .iconbtn svg { width: 18px; height: 18px; }
-  .iconbtn .tip { position: absolute; background: var(--ink); color: var(--bg); font-size: 11px; padding: 3px 7px; border-radius: 6px; opacity: 0; pointer-events: none; white-space: nowrap; transition: opacity 0.15s; transform: translate(-50%, -100%); top: -6px; left: 50%; }
-  .iconbtn:hover .tip { opacity: 1; }
-
-  /* center: title + search */
-  #home { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; gap: 28px; }
-  #title { font-size: clamp(56px, 12vw, 110px); font-weight: 700; letter-spacing: -0.04em; margin: 0; line-height: 1; }
-  /* the search bar with side arrow buttons + cloak icon */
-  form.search { width: 100%; max-width: 600px; position: relative; display: flex; align-items: center; }
-  form.search .side {
-    width: var(--tap); height: var(--tap); flex: none; border: 1px solid var(--line);
-    background: var(--bg); color: var(--ink-soft); border-radius: 50%; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s;
-  }
-  form.search .side:hover { background: var(--line); color: var(--ink); }
-  form.search .side.left { margin-right: -16px; z-index: 2; }
-  form.search .side.right { margin-left: -16px; z-index: 2; }
-  form.search .side svg { width: 16px; height: 16px; }
-  form.search input {
-    flex: 1; height: 56px; padding: 0 60px 0 60px; border-radius: var(--r);
-    border: 1px solid var(--line); background: rgba(255,255,255,0.65); color: var(--ink);
-    font-family: var(--font); font-size: 16px; outline: none; backdrop-filter: blur(6px);
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-  body[data-theme="dark"] form.search input { background: rgba(20,20,22,0.65); }
-  form.search input:focus { border-color: var(--ink-soft); box-shadow: 0 0 0 4px var(--line); }
-  form.search .cloak-btn {
-    position: absolute; right: 64px; top: 50%; transform: translateY(-50%);
-    width: 30px; height: 30px; border: 0; background: transparent; color: var(--ink-soft);
-    cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%;
-  }
-  form.search .cloak-btn:hover { color: var(--ink); background: var(--line); }
-  form.search .cloak-btn svg { width: 18px; height: 18px; }
-  #status { font-size: 13px; color: var(--ink-soft); min-height: 18px; text-align: center; }
-
-  #ip-badge { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 6; font-size: 11px; color: var(--ink-soft); display: none; }
-  #ip-badge b { color: var(--ink); font-weight: 500; }
-
-  /* ---------- BOTTOM BAR (outside the main container) ---------- */
-  #bottombar {
-    position: fixed; bottom: 0; left: 0; right: 0; height: 56px; z-index: 20;
-    display: flex; align-items: center; gap: 8px; padding: 0 14px;
-    background: var(--bg); border-top: var(--frame-border);
-  }
-  #bottombar .bar-search {
-    width: var(--tap); height: var(--tap); border-radius: 50%; border: 1px solid var(--line);
-    background: var(--bg); color: var(--ink-soft); display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  }
-  #bottombar .bar-search:hover { color: var(--ink); background: var(--line); }
-  #bottombar .bar-divider { width: 1px; height: 24px; background: var(--line); margin: 0 6px; }
-  #bottombar .bar-apps { display: flex; gap: 6px; flex: 1; overflow-x: auto; }
-  .bar-app {
-    display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; height: 34px;
-    border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--ink-soft);
-    font-family: var(--font); font-size: 13px; cursor: pointer; white-space: nowrap;
-    transition: background 0.15s, color 0.15s;
-  }
-  .bar-app:hover { background: var(--line); color: var(--ink); }
-  .bar-app.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-  .bar-app svg { width: 15px; height: 15px; }
-  .bar-app .close-x { margin-left: 4px; opacity: 0.5; }
-  .bar-app.active .close-x { opacity: 0.8; }
-
-  /* ---------- settings sheet ---------- */
-  #settings { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.25); display: none; align-items: flex-start; justify-content: flex-end; }
-  #settings.open { display: flex; }
-  #settings .panel { width: min(440px, 100%); height: 100%; background: var(--bg); border-left: var(--frame-border); overflow-y: auto; padding: 20px 22px; animation: slidein 0.2s ease; }
-  @keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
-  #settings h2 { font-size: 18px; margin: 0 0 4px; }
-  #settings .group { margin: 22px 0; padding-top: 16px; border-top: 1px solid var(--line); }
-  #settings .group:first-of-type { border-top: 0; padding-top: 0; }
-  #settings label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; margin: 10px 0; color: var(--ink); }
-  #settings label small { color: var(--ink-soft); font-size: 12px; display: block; }
-  #settings select, #settings input[type="text"], #settings input[type="number"] { font-family: var(--font); font-size: 14px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); min-width: 150px; }
-  .switch { position: relative; width: 40px; height: 22px; flex: none; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .switch .track { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background 0.2s; }
-  .switch .track:before { content:""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: var(--bg); border-radius: 50%; transition: transform 0.2s; }
-  .switch input:checked + .track { background: var(--ink); }
-  .switch input:checked + .track:before { transform: translateX(18px); }
-  .row-buttons { display: flex; gap: 8px; margin-top: 16px; }
-  .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; cursor: pointer; }
-  .btn.primary { background: var(--ink); color: var(--bg); }
-
-  /* ---------- stage (proxied site) ---------- */
-  #stage { position: fixed; inset: 0; z-index: 18; background: var(--bg); display: none; flex-direction: column; }
-  #stage.active { display: flex; }
-  #stage-bar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: var(--frame-border); background: var(--bg); }
-  #stage-bar .crumb { font-size: 13px; color: var(--ink-soft); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #stage iframe { flex: 1; width: 100%; border: 0; background: #fff; }
-
-  /* ---------- panels (editor, vault, emulators) ---------- */
-  .panel-full { position: fixed; inset: 0; z-index: 16; background: var(--bg); display: none; flex-direction: column; }
-  .panel-full.open { display: flex; }
-  .panel-full .ph { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: var(--frame-border); }
-  .panel-full .ph h2 { margin: 0; font-size: 16px; flex: 1; }
-  .panel-full .body { flex: 1; overflow: auto; padding: 16px; }
-  #editor-area { width: 100%; height: calc(100% - 16px); border: 0; outline: none; resize: none; font-family: var(--font); font-size: 16px; line-height: 1.6; background: var(--bg); color: var(--ink); padding: 8px; }
-  .vault-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 14px; }
-
-  /* ---------- lock ---------- */
-  #lockscreen { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
-  body.lux-locked #lockscreen { display: flex; }
-  body.lux-locked #main-container, body.lux-locked #bottombar, body.lux-locked #stage { display: none !important; }
-  #lockscreen input { width: min(280px, 80%); height: 48px; border-radius: var(--r); border: 1px solid var(--line); background: transparent; color: var(--ink); text-align: center; font-family: var(--font); font-size: 16px; outline: none; }
-  #lock-msg { font-size: 13px; color: var(--ink-soft); }
-
-  /* ---------- kill switch banner ---------- */
-  #killbanner { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
-  body.lux-killswitch #killbanner { display: flex; }
-
-  /* ---------- help tooltip ---------- */
-  #help-tip { position: absolute; bottom: 60px; left: 16px; z-index: 60; width: 280px; background: var(--ink); color: var(--bg); padding: 14px 16px; border-radius: 10px; font-size: 13px; line-height: 1.5; display: none; }
-  #help-tip.open { display: block; }
-  #help-tip b { font-weight: 700; }
-  #help-tip .kbd { display: inline-block; padding: 1px 6px; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; font-family: ui-monospace, monospace; font-size: 11px; }
-
-  .gh-link { font-size: 11px; color: var(--ink-soft); }
-  .gh-link a { color: var(--ink); text-decoration: none; }
-
-  @media (max-width: 640px) {
-    #title { font-size: 64px; }
-    form.search input { height: 52px; font-size: 15px; padding: 0 54px; }
-    #ip-badge { display: none !important; }
-    .corner { top: 10px; } .corner.left { left: 10px; } .corner.right { right: 10px; }
-  }
-</style>
+<link rel="stylesheet" href="/css/styles.css">
 </head>
 <body data-theme="light" data-bg="dots" data-chrome="macos">
   <div id="dots"></div>
   <canvas id="sky"></canvas>
 
-  <!-- MAIN CONTAINER -->
-  <div id="main-container">
-    <!-- corners -->
-    <div class="corner left">
-      <button class="iconbtn" id="open-settings" aria-label="Settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
+  <!-- ========== LOCK SCREEN ========== -->
+  <div id="lockscreen">
+    <button id="lock-skip" aria-label="Skip">&#10005;</button>
+    <div id="lock-title">Set a Password</div>
+    <div class="lock-box">
+      <input id="lock-input" type="password" autocomplete="off" placeholder="Create a password">
+      <div id="lock-msg"></div>
+      <button id="lock-submit" aria-label="Submit">&#8594;</button>
+      <button id="lock-reset" aria-label="Reset">&#8635;</button>
     </div>
-    <div class="corner right">
-      <button class="iconbtn" id="open-docs" aria-label="Docs">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
-        <span class="tip">How it works</span>
-      </button>
-      <button class="iconbtn" id="open-games" aria-label="Games">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><rect x="2" y="6" width="20" height="12" rx="4"/></svg>
-        <span class="tip">Games</span>
-      </button>
-    </div>
+  </div>
 
-    <div id="ip-badge"></div>
-
-    <!-- home -->
+  <!-- ========== APP ========== -->
+  <div id="app">
+    <!-- Home Screen -->
     <div id="home">
       <h1 id="title">Lux</h1>
-      <form class="search" id="search-form">
-        <button type="button" class="side left" id="search-back" aria-label="Back">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <input id="search-input" type="text" autocomplete="off" spellcheck="false">
-        <button type="button" class="cloak-btn" id="cloak-btn" aria-label="Open in cloaked window">
+      <div class="search-row">
+        <input id="search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search or enter URL">
+        <button class="home-btn incognito" id="incognito-btn" aria-label="Incognito">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/><circle cx="12" cy="11" r="2.5"/></svg>
         </button>
-        <button type="submit" class="side right" aria-label="Go">
+        <button class="home-btn" id="search-btn" aria-label="Search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
-      </form>
+      </div>
       <div id="status"></div>
     </div>
 
-    <!-- bottom-left help, bottom-right github -->
-    <div class="corner-bl">
-      <button class="iconbtn" id="open-help" aria-label="Help">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      </button>
-    </div>
-    <div class="corner-br">
-      <a class="iconbtn gh-link" href="https://github.com/darksomaX/Lux" target="_blank" rel="noopener" aria-label="GitHub">
-        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 .5C5.4.5 0 5.9 0 12.5c0 5.3 3.4 9.8 8.2 11.4.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 24 12.5C24 5.9 18.6.5 12 .5z"/></svg>
-      </a>
-    </div>
-  </div>
-
-  <!-- BOTTOM BAR (outside main container) -->
-  <div id="bottombar">
-    <button class="bar-search" id="bar-home" aria-label="Search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-    </button>
-    <div class="bar-divider"></div>
-    <div class="bar-apps" id="bar-apps">
-      <button class="bar-app active" data-app="browser">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
-        Browser
-      </button>
-      <button class="bar-app" data-app="notes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
-        Notes
-      </button>
-      <button class="bar-app" data-app="vault">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M7 6V4h10v2"/></svg>
-        Vault
-      </button>
-      <button class="bar-app" data-app="games">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/></svg>
-        Games
-      </button>
-    </div>
-  </div>
-
-  <!-- proxied site stage -->
-  <div id="stage">
-    <div id="stage-bar">
-      <button class="iconbtn" id="stage-close" aria-label="Close tab">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
-      <span class="crumb" id="stage-crumb"></span>
-    </div>
-    <iframe id="frame" referrerpolicy="no-referrer" allow="fullscreen; clipboard-read; clipboard-write; encrypted-media; gamepad"></iframe>
-  </div>
-
-  <!-- phase 2 panels -->
-  <section class="panel-full" id="panel-docs">
-    <div class="ph"><button class="iconbtn" data-close="panel-docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg></button><h2>How it works</h2></div>
-    <div class="body" id="docs-body" style="font-size:15px;line-height:1.6"></div>
-  </section>
-
-  <section class="panel-full" id="panel-editor">
-    <div class="ph"><button class="iconbtn" data-close="panel-editor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg></button><h2>Notes</h2><button class="btn" id="editor-save">Save</button></div>
-    <div class="body" style="padding:0"><div style="height:100%"><textarea id="editor-area" placeholder="Write. Saved encrypted to this browser."></textarea></div></div>
-  </section>
-
-  <section class="panel-full" id="panel-vault">
-    <div class="ph"><button class="iconbtn" data-close="panel-vault"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg></button><h2>Vault</h2><button class="btn" id="vault-import">Import file</button></div>
-    <div class="body" id="vault-list"></div>
-  </section>
-
-  <section class="panel-full" id="panel-games">
-    <div class="ph"><button class="iconbtn" data-close="panel-games"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg></button><h2>Games</h2><button class="btn" id="rom-folder-btn">Choose ROM folder</button><input type="file" id="rom-input" accept=".gba,.gbc,.gb,.nes,.sfc,.smc,.snes,.zip" style="display:none"></div>
-    <div class="body" id="games-body">
-      <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
-        Pick a ROM file to play it in the browser emulator (mGBA and other cores). Your ROM folder choice is remembered for next time if your browser supports the File System Access API.
-        <div id="rom-list" style="margin-top:16px"></div>
+    <!-- Browser Area (tab strip + toolbar + viewport) -->
+    <div id="browser-area">
+      <div id="tab-strip"></div>
+      <div id="browser-toolbar">
+        <button class="toolbar-btn" id="nav-back" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="toolbar-btn" id="nav-forward" aria-label="Forward">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="toolbar-btn" id="nav-stop" aria-label="Stop">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
+        <button class="toolbar-btn" id="nav-reload" aria-label="Reload">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12a11 11 0 0 1 21-6.5M23 12a11 11 0 0 1-21 6.5"/><path d="M23 3v6h-6M1 21v-6h6"/></svg>
+        </button>
+        <div id="toolbar-url-wrap">
+          <input id="toolbar-url" type="text" autocomplete="off" spellcheck="false" placeholder="Enter URL or search">
+          <button class="toolbar-info" id="nav-info" aria-label="Page info">&#128274;</button>
+        </div>
+        <button class="toolbar-btn" id="nav-new" aria-label="New tab">+</button>
+        <button class="toolbar-btn" id="nav-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div id="tab-viewport">
+        <!-- Tab iframes are created dynamically by tabs.js -->
       </div>
     </div>
-  </section>
 
-  <!-- settings -->
+    <!-- Taskbar (Windows style) -->
+    <div id="taskbar">
+      <div id="taskbar-left">
+        <button class="taskbar-app active" data-app="browser">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
+          Browser
+        </button>
+        <button class="taskbar-app" data-app="notes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+          Notes
+        </button>
+        <button class="taskbar-app" data-app="vault">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M7 6V4h10v2"/></svg>
+          Vault
+        </button>
+        <button class="taskbar-app" data-app="games">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/></svg>
+          Games
+        </button>
+      </div>
+      <div id="taskbar-center"><span class="task-label"></span></div>
+      <div id="taskbar-right">
+        <button class="taskbar-icon" id="open-settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="taskbar-icon" id="open-docs" aria-label="Docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+        </button>
+        <button class="taskbar-icon" id="open-games" aria-label="Games">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><rect x="2" y="6" width="20" height="12" rx="4"/></svg>
+        </button>
+        <button class="taskbar-icon" id="open-help" aria-label="Help">?</button>
+        <a class="taskbar-icon gh-link" href="https://github.com/darksomaX/Lux" target="_blank" rel="noopener" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 .5C5.4.5 0 5.9 0 12.5c0 5.3 3.4 9.8 8.2 11.4.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 24 12.5C24 5.9 18.6.5 12 .5z"/></svg>
+        </a>
+        <span id="taskbar-clock"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== OVERLAYS ========== -->
   <div id="settings">
     <div class="panel">
       <h2>Settings</h2>
@@ -321,13 +123,31 @@
     </div>
   </div>
 
-  <!-- lock -->
-  <div id="lockscreen">
-    <input id="lock-input" type="password" autocomplete="off">
-    <div id="lock-msg"></div>
-  </div>
+  <section class="panel-full" id="panel-docs">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-docs" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-docs" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-docs" aria-label="Close"></button></div><h2>How it works</h2></div>
+    <div class="body" id="docs-body" style="font-size:15px;line-height:1.6"></div>
+  </section>
 
-  <!-- kill switch -->
+  <section class="panel-full" id="panel-editor">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-editor" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-editor" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-editor" aria-label="Close"></button></div><h2>Notes</h2><button class="btn" id="editor-save">Save</button></div>
+    <div class="body" style="padding:0"><div style="height:100%"><textarea id="editor-area" placeholder="Write. Saved encrypted to this browser."></textarea></div></div>
+  </section>
+
+  <section class="panel-full" id="panel-vault">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-vault" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-vault" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-vault" aria-label="Close"></button></div><h2>Vault</h2><button class="btn" id="vault-import">Import file</button></div>
+    <div class="body" id="vault-list"></div>
+  </section>
+
+  <section class="panel-full" id="panel-games">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-games" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-games" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-games" aria-label="Close"></button></div><h2>Games</h2><button class="btn" id="rom-folder-btn">Choose ROM folder</button><input type="file" id="rom-input" accept=".gba,.gbc,.gb,.nes,.sfc,.smc,.snes,.zip" style="display:none"></div>
+    <div class="body" id="games-body">
+      <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
+        Pick a ROM file to play it in the browser emulator.
+        <div id="rom-list" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </section>
+
   <div id="killbanner">
     <div style="font-size:16px">Network changed.</div>
     <div style="font-size:13px;color:var(--ink-soft);max-width:340px">Traffic is paused until you confirm the new network.</div>
@@ -335,21 +155,18 @@
     <button class="btn primary" id="kill-dismiss">Resume</button>
   </div>
 
-  <!-- help tooltip -->
   <div id="help-tip">
     <b>Tips</b><br>
     Type a URL or search, press enter.<br>
     <span class="kbd">`</span> panic key jumps to a decoy.<br>
     Cloak opens the session hidden in an about:blank window.<br>
-    Gear (top-left) for settings. Games (top-right) for the emulator.
+    Settings in the taskbar.
   </div>
 
-  <!-- UV: the bundle MUST load before the config, because uv.config.js
-       references Ultraviolet.codec at parse time. -->
+  <div id="ip-badge"></div>
+
   <script src="/uv/uv.bundle.js"></script>
   <script src="/uv/uv.config.js"></script>
-  <!-- Scramjet (900KB) is lazy-loaded by engine.js only when the user picks
-       that engine, so it never blocks the default Ultraviolet page load. -->
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>

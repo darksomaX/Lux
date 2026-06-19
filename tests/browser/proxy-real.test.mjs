@@ -58,26 +58,29 @@ ok("service worker is active", swReady.startsWith("active"), "got " + swReady);
 await page.fill("#search-input", TARGET);
 await page.press("#search-input", "Enter");
 
-// 4. Wait for the stage to become active (poll, since the SW+wisp load time
-//    varies). Cap at 15s.
+// 4. Wait for the browser area to become active (poll, since the SW+wisp load
+//    time varies). The element is now #browser-area (not #stage).
 let stageActive = false;
 for (let i = 0; i < 30; i++) {
-  stageActive = await page.evaluate(() => document.getElementById("stage").classList.contains("active"));
+  stageActive = await page.evaluate(() => {
+    const el = document.getElementById("browser-area");
+    return el && el.classList.contains("active");
+  });
   if (stageActive) break;
   await wait(500);
 }
-ok("stage became active after submit", stageActive);
+ok("browser area became active after submit", stageActive);
 
 let frameContent = "";
 let frameUrl = "";
 try {
-  // The proxied iframe has id="frame". Wait for the SW to navigate it, then
-  // read its content via Playwright's frame API (handles same-origin SW scope).
+  // The proxied iframe is now created dynamically by tabs.js. Find it by
+  // looking for any frame whose URL contains /s/ (the new prefix) or
+  // /service/ (legacy).
   await wait(5000);
-  // Find the child frame whose URL contains /service/ (the proxied path).
   let proxiedFrame = null;
   for (let attempt = 0; attempt < 10; attempt++) {
-    proxiedFrame = page.frames().find((f) => f.url().includes("/service/") || f.url().includes("/uv/"));
+    proxiedFrame = page.frames().find((f) => f.url().includes("/s/") || f.url().includes("/service/") || f.url().includes("/uv/"));
     if (proxiedFrame) break;
     await wait(1000);
   }
@@ -97,7 +100,7 @@ try {
   console.log("  (frame inspect error: " + e.message + ")");
 }
 
-ok("proxied frame navigated to a /service/ path", frameUrl.includes("/service/"), "url: " + frameUrl.slice(0, 100));
+ok("proxied frame navigated to a /s/ or /service/ path", frameUrl.includes("/s/") || frameUrl.includes("/service/"), "url: " + frameUrl.slice(0, 100));
 ok("proxied page contains expected content '" + EXPECTED + "'", frameContent.includes(EXPECTED),
   "got: " + frameContent.slice(0, 200));
 

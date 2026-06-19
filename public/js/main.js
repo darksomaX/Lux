@@ -1,16 +1,15 @@
-// Lux main entry. Wires the engine, transport, settings UI, lock, kill switch,
-// dock tools, and phase 2 panels. Everything is ESM; bare-mux is attached to
-// window.BareMux in transport.js so engine code expecting the global works.
+// Lux main entry. Wires the engine, transport, browser toolbar, lock,
+// settings UI, dock tools, and phase 2 panels. Everything is ESM.
 
 import { loadSettings, saveSettings, resetSettings } from "./settings.js";
 import { setTransportFor } from "./transport.js";
 import { getEngine, listEngines } from "./engine.js";
-import { normalizeUrl, buildProxyPath } from "./url-scheme.js";
-import { isUnlocked, tryUnlock, lock, armIdle } from "./lock.js";
+import { normalizeUrl } from "./url-scheme.js";
+import { isUnlocked, initLock, lock } from "./lock.js";
 import { markCanonical, breakOutOfNest } from "./smart-iframe.js";
 import { applyGoogleOptOut } from "./extensions.js";
 import * as kill from "./kill-switch.js";
-import { openCloaked, applyDisguise, listDisguises, armPanicKey, enableAntiClose } from "./cloak.js";
+import { openCloaked, armPanicKey, enableAntiClose } from "./cloak.js";
 import { initVault, saveNote, listVault, importFile, openVaultItem, deleteVaultItem } from "./vault.js";
 import { armPrimeOnFirstGesture } from "./popup-perm.js";
 import { listEngines as listSearchEngines } from "./search-engines.js";
@@ -19,38 +18,40 @@ import { downloadSession, pickAndImportSession } from "./session.js";
 import { startIframeWatch, stopIframeWatch } from "./iframe-watch.js";
 import { startTitleWatch, stopTitleWatch } from "./true-title.js";
 import * as usb from "./usb-killswitch.js";
+import * as Tabs from "./tabs.js";
 
 const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
+// currentTarget / navHistory are now per-tab (see tabs.js). These are kept as
+// backward-compat shims for any code that still references them.
+function currentTarget() { return Tabs.getActiveTab()?.url || null; }
 
-// ---- apply persisted settings to the DOM ----
+// ── Settings → DOM ───────────────────────────────────────────────────────
+
 function applySettingsToDom(s) {
   document.body.dataset.theme = s.theme;
   document.body.dataset.bg = s.background;
-  document.body.dataset.dock = String(s.showDock);
-  document.body.dataset.fs = s.fullscreenMode;
   document.body.dataset.chrome = s.windowChrome || "macos";
+  document.body.dataset.taskbarHide = String(s.taskbarHide || false);
   const badge = $("ip-badge");
   if (badge) badge.style.display = s.showIpBadge ? "block" : "none";
 }
 applySettingsToDom(settings);
-
 markCanonical();
 applyGoogleOptOut();
 
-// ---- nesting guard: never run Lux inside a proxied Lux ----
 const hashTarget = decodeURIComponent(location.hash.slice(1));
 if (breakOutOfNest(hashTarget)) {
-  // stop here; the top frame takes over.
+  // stop here
 } else {
   boot();
 }
 
 async function boot() {
   initBackground();
-  initChrome();
-  initSearch();
-  initStage();
+  initHomeSearch();
+  initToolbar();
+  initTaskbar();
   initSettingsUi();
   initLock();
   initKillSwitch();
@@ -58,20 +59,34 @@ async function boot() {
   initIpBadge();
   initSessionTransfer();
   initUsbKillswitch();
-  // Prime popup permission on the first gesture so the Cloak button works
-  // without a failed first click.
   armPrimeOnFirstGesture();
+  initTrueUrlReveal();
+  initClock();
+  containerAutoHide();
+  addLuxFloat();
+
+  // Add hover-zone element for taskbar auto-hide
+  const zone = document.createElement("div");
+  zone.id = "taskbar-hover-zone";
+  document.body.appendChild(zone);
 
   if (hashTarget) navigate(hashTarget);
 }
 
-// ---------- background animation ----------
+// ── Lux Title Animation ───────────────────────────────────────────────────
+
+function addLuxFloat() {
+  const title = $("title");
+  if (title) title.classList.add("lux-float");
+}
+
+// ── Background ───────────────────────────────────────────────────────────
+
 function initBackground() {
   const canvas = $("sky");
   const ctx = canvas.getContext("2d");
   let stars = [];
   let raf = null;
-  let idleTimer = null;
 
   function resize() {
     canvas.width = innerWidth;
@@ -106,19 +121,6 @@ function initBackground() {
     raf = null;
   }
   addEventListener("resize", resize);
-  // Night sky appears when the user goes idle (no input for ~6s).
-  ["pointermove", "keydown", "click"].forEach((ev) =>
-    addEventListener(ev, () => {
-      clearTimeout(idleTimer);
-      if (document.body.dataset.bg === "stars") return;
-      // while active, ensure stars are off unless chosen as the setting
-      idleTimer = setTimeout(() => {
-        if (settings.background !== "stars") {
-          // gentle idle reveal only on light theme
-        }
-      }, 6000);
-    })
-  );
   start();
   window.addEventListener("lux:settings", (e) => {
     Object.assign(settings, e.detail);
@@ -127,50 +129,286 @@ function initBackground() {
   });
 }
 
-// ---------- bottom bar + corners ----------
-function initChrome() {
-  // bottom-bar home/search button -> focus the home search input
-  $("bar-home").onclick = () => {
-    closeAllPanels();
-    $("stage").classList.remove("active");
-    setTimeout(() => $("search-input").focus(), 100);
+// ── Home Search ───────────────────────────────────────────────────────────
+
+let incognito = false;
+
+function initHomeSearch() {
+  const input = $("search-input");
+  const searchBtn = $("search-btn");
+  const incogBtn = $("incognito-btn");
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      navigate(input.value.trim());
+    }
+  });
+  searchBtn.onclick = () => navigate(input.value.trim());
+  incogBtn.onclick = () => {
+    incognito = !incognito;
+    incogBtn.classList.toggle("active");
   };
+}
 
-  // search back arrow -> close the stage and go home
-  $("search-back").onclick = () => {
-    $("frame").src = "about:blank";
-    $("stage").classList.remove("active");
-  };
+// ── Browser Toolbar ──────────────────────────────────────────────────────
 
-  // cloak icon next to the search bar
-  $("cloak-btn").onclick = () => {
-    const t = $("search-input").value.trim();
-    if (t) openCloakedTarget(t);
-  };
+function initToolbar() {
+  $("nav-back").onclick = () => { const t = Tabs.getActiveTab(); if (t) Tabs.goBack(t.id); };
+  $("nav-forward").onclick = () => { const t = Tabs.getActiveTab(); if (t) Tabs.goForward(t.id); };
+  $("nav-stop").onclick = () => { const t = Tabs.getActiveTab(); if (t) try { t.iframe.contentWindow.stop(); } catch {} };
+  $("nav-reload").onclick = () => { const t = Tabs.getActiveTab(); if (t) Tabs.reloadTab(t.id); };
+  $("toolbar-url").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      navigate($("toolbar-url").value.trim());
+    }
+  });
+  $("nav-new").onclick = () => { showHome(); };
+  $("nav-close").onclick = closeBrowser;
+}
 
-  // top-right: docs (how it works) + games
-  $("open-docs").onclick = () => openPanel("panel-docs");
-  $("open-games").onclick = () => openPanel("panel-games");
+function navBack() {}
+function navForward() {}
+function navStop() {}
+function navReload() {}
+function pushHistory() {}
 
-  // bottom-left help tooltip toggle
-  $("open-help").onclick = (e) => {
-    e.stopPropagation();
-    $("help-tip").classList.toggle("open");
-  };
-  document.addEventListener("click", () => $("help-tip").classList.remove("open"));
+// ── Navigation (delegates to the tab manager) ────────────────────────────
 
-  // bar app switching. Each app opens its panel; Browser shows the stage.
-  // Only Browser is active by default.
-  document.querySelectorAll(".bar-app").forEach((b) => {
+function navigate(input) {
+  if (!input || !isUnlocked()) return;
+  const url = normalizeUrl(input);
+  if (!url) return;
+  if (breakOutOfNest(url)) return;
+
+  // If the active tab is a "new tab" (no URL yet), navigate it in place.
+  // Otherwise create a new tab. This mirrors browser behavior.
+  let tab = Tabs.getActiveTab();
+  if (!tab || tab.url) {
+    tab = Tabs.createTab();
+  }
+  Tabs.navigateTab(tab.id, url, true);
+  showBrowser();
+  setStatus("Loading...");
+  onStageOpened();
+}
+
+// Navigate in a new tab (used by window.open interception).
+function navigateNewTab(url) {
+  if (!isUnlocked()) return;
+  const decoded = normalizeUrl(url);
+  if (!decoded) return;
+  const tab = Tabs.createTab(decoded);
+  showBrowser();
+}
+
+async function navigateToUrl(url, recordHistory) {
+  // Legacy compat: navigate the active tab.
+  const tab = Tabs.getActiveTab();
+  if (!tab) { Tabs.createTab(url); return; }
+  await Tabs.navigateTab(tab.id, url, recordHistory);
+  showBrowser();
+  setStatus("");
+}
+
+// ── Browser Visibility ───────────────────────────────────────────────────
+
+function showBrowser() {
+  $("browser-area").classList.add("active");
+  $("home").classList.add("hidden");
+  document.querySelector(".taskbar-app[data-app=\"browser\"]").classList.add("active");
+  renderTabStrip();
+}
+
+function showHome() {
+  // "New tab" — create a fresh new-tab and activate it.
+  Tabs.createTab();
+  $("browser-area").classList.remove("active");
+  $("home").classList.remove("hidden");
+  document.querySelector(".taskbar-app[data-app=\"browser\"]").classList.remove("active");
+}
+
+function closeBrowser() {
+  const tab = Tabs.getActiveTab();
+  if (tab) Tabs.closeTab(tab.id);
+  // If no tabs remain, tabs.js auto-creates a new-tab.
+  if (!Tabs.getActiveTab()?.url) {
+    $("browser-area").classList.remove("active");
+    $("home").classList.remove("hidden");
+  }
+  onStageClosed();
+}
+
+function toggleBrowser() {
+  if ($("browser-area").classList.contains("active")) {
+    showHome();
+  } else if (Tabs.getActiveTab()?.url) {
+    showBrowser();
+  }
+}
+
+// ── Tab strip rendering ──────────────────────────────────────────────────
+
+function renderTabStrip() {
+  const strip = $("tab-strip");
+  if (!strip) return;
+  const allTabs = Tabs.getAllTabs();
+  strip.innerHTML = "";
+  for (const t of allTabs) {
+    const el = document.createElement("div");
+    el.className = "tab-item" + (t.id === Tabs.getActiveTab()?.id ? " active" : "");
+    el.dataset.tabId = String(t.id);
+    const fav = t.favicon ? `<img class="tab-fav" src="${t.favicon}" alt="">` : "";
+    el.innerHTML = `${fav}<span class="tab-title">${escapeHtml(t.title || t.url || "New Tab")}</span><button class="tab-close" aria-label="Close">&times;</button>`;
+    el.addEventListener("click", (e) => {
+      if (e.target.classList.contains("tab-close")) {
+        Tabs.closeTab(t.id);
+      } else {
+        Tabs.activateTab(t.id);
+      }
+      renderTabStrip();
+    });
+    // Middle-click closes (Chromium behavior).
+    el.addEventListener("auxclick", (e) => {
+      if (e.button === 1) { Tabs.closeTab(t.id); renderTabStrip(); }
+    });
+    strip.appendChild(el);
+  }
+  // The + button.
+  const plus = document.createElement("button");
+  plus.className = "tab-new";
+  plus.textContent = "+";
+  plus.title = "New tab";
+  plus.onclick = () => { Tabs.createTab(); renderTabStrip(); };
+  strip.appendChild(plus);
+}
+
+// React to tab manager events to keep the strip + toolbar in sync.
+Tabs.on("tabCreated", () => renderTabStrip());
+Tabs.on("tabClosed", () => renderTabStrip());
+Tabs.on("tabActivated", (tab) => {
+  renderTabStrip();
+  if (tab && tab.url) {
+    showBrowser();
+    onStageOpened();
+  }
+});
+Tabs.on("tabUpdated", (tab) => {
+  renderTabStrip();
+  setStatus("");
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ── Orphan detection ─────────────────────────────────────────────────────
+// If Lux was loaded at a bare /service/ or /s/ path (the user opened a proxied
+// link directly), show a toast offering to return home.
+if (Tabs.detectOrphan()) {
+  setTimeout(() => {
+    showToast("Opened a proxied link directly?", () => { window.location.href = "/"; });
+  }, 500);
+}
+
+// ── Cloak ─────────────────────────────────────────────────────────────────
+
+async function openCloakedTarget(input) {
+  const url = normalizeUrl(input);
+  if (!url) return;
+  try {
+    await setTransportFor(getEngine().name);
+    await getEngine().init();
+    const enc = (u) => getEngine().encode(u) || "/uv/" + u;
+    await openCloaked(url, enc);
+    setStatus("Opened in cloaked window.");
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+// ── Stage ─────────────────────────────────────────────────────────────────
+
+function onStageOpened() {
+  const activeFrame = Tabs.getActiveTab()?.iframe;
+  if (!activeFrame) return;
+  if (loadSettings().trueTitle) startTitleWatch(activeFrame);
+  startIframeWatch($("tab-viewport"), (nestedSrc) => {
+    showToast("Nested frame detected. Open it?", () => navigateNewTab(nestedSrc));
+  });
+}
+function onStageClosed() {
+  stopTitleWatch();
+  stopIframeWatch();
+}
+
+// ── True URL Reveal ───────────────────────────────────────────────────────
+
+function initTrueUrlReveal() {
+  let lastCtrl = 0;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Control") return;
+    const now = Date.now();
+    if (now - lastCtrl < 400) {
+      flashTrueUrl();
+      lastCtrl = 0;
+    } else {
+      lastCtrl = now;
+    }
+  });
+}
+
+function flashTrueUrl() {
+  const url = Tabs.getActiveTab()?.url;
+  if (!url) return;
+  const crumb = $("stage-crumb");
+  if (!crumb) return;
+  const original = crumb.textContent;
+  crumb.textContent = url;
+  crumb.style.color = "var(--accent)";
+  crumb.style.fontFamily = "ui-monospace, monospace";
+  crumb.style.fontSize = "12px";
+  setTimeout(() => {
+    crumb.textContent = original;
+    crumb.style.color = "";
+    crumb.style.fontFamily = "";
+    crumb.style.fontSize = "";
+  }, 2000);
+}
+
+function safeHostname(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+// ── Taskbar ───────────────────────────────────────────────────────────────
+
+function initTaskbar() {
+  document.querySelectorAll(".taskbar-app").forEach((b) => {
     b.onclick = () => {
-      document.querySelectorAll(".bar-app").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
       const app = b.dataset.app;
+      const wasActive = b.classList.contains("active");
+      const panelMap = {
+        browser: null,
+        notes: "panel-editor",
+        vault: "panel-vault",
+        games: "panel-games",
+      };
+      const panelId = panelMap[app];
+
+      // If the app's panel is already open and active, clicking again minimizes it.
+      if (wasActive && panelId && $(panelId).classList.contains("open")) {
+        closeAllPanels();
+        b.classList.remove("active");
+        return;
+      }
+
+      document.querySelectorAll(".taskbar-app").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
       closeAllPanels();
       switch (app) {
         case "browser":
-          if (currentTarget) $("stage").classList.add("active");
-          else $("stage").classList.remove("active");
+          toggleBrowser();
           break;
         case "notes":
           openPanel("panel-editor");
@@ -186,6 +424,15 @@ function initChrome() {
       }
     };
   });
+
+  $("open-settings").onclick = () => $("settings").classList.add("open");
+  $("open-docs").onclick = () => openPanel("panel-docs");
+  $("open-games").onclick = () => openPanel("panel-games");
+  $("open-help").onclick = (e) => {
+    e.stopPropagation();
+    $("help-tip").classList.toggle("open");
+  };
+  document.addEventListener("click", () => $("help-tip").classList.remove("open"));
 }
 
 function openPanel(id) {
@@ -196,199 +443,74 @@ function closeAllPanels() {
   document.querySelectorAll(".panel-full").forEach((p) => p.classList.remove("open"));
 }
 document.querySelectorAll("[data-close]").forEach((b) => {
-  b.onclick = () => $(b.dataset.close).classList.remove("open");
+  b.onclick = () => {
+    const panel = $(b.dataset.close);
+    if (panel) {
+      panel.classList.remove("open", "maximized");
+      // Deactivate the corresponding taskbar app.
+      const app = panel.id.replace("panel-", "");
+      document.querySelectorAll(".taskbar-app").forEach((t) => {
+        if (t.dataset.app === app || (app === "editor" && t.dataset.app === "notes")) t.classList.remove("active");
+      });
+    }
+  };
+});
+// Minimize: hide the panel (keep state).
+document.querySelectorAll("[data-minimize]").forEach((b) => {
+  b.onclick = () => {
+    const panel = $(b.dataset.minimize);
+    if (panel) panel.classList.remove("open");
+    // Deactivate taskbar app.
+    const app = b.dataset.minimize.replace("panel-", "");
+    document.querySelectorAll(".taskbar-app").forEach((t) => {
+      if (t.dataset.app === app || (app === "editor" && t.dataset.app === "notes")) t.classList.remove("active");
+    });
+  };
+});
+// Maximize: toggle full-screen panel.
+document.querySelectorAll("[data-maximize]").forEach((b) => {
+  b.onclick = () => {
+    const panel = $(b.dataset.maximize);
+    if (panel) panel.classList.toggle("maximized");
+  };
 });
 
-// ---------- search / navigate ----------
-function initSearch() {
-  $("search-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const v = $("search-input").value.trim();
-    if (v) navigate(v);
-  });
+// ── Taskbar Auto-Hide ────────────────────────────────────────────────────
+
+function containerAutoHide() {
+  // The CSS handles the visual hiding; just ensure the hover zone works.
+  document.body.dataset.taskbarHide = String(loadSettings().taskbarHide || false);
 }
 
-let currentTarget = null;
-async function navigate(input) {
-  if (!isUnlocked()) {
-    pendingTarget = input;
-    return;
+// ── Clock ─────────────────────────────────────────────────────────────────
+
+function initClock() {
+  const el = $("taskbar-clock");
+  if (!el) return;
+  function tick() {
+    el.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-  const url = normalizeUrl(input);
-  if (!url) return;
-  currentTarget = url;
-
-  // Smart-iframe: if this very URL is already Lux, refuse to nest.
-  if (breakOutOfNest(url)) return;
-
-  const eng = getEngine();
-  setStatus("Starting " + eng.label + "...");
-  try {
-    await setTransportFor(eng.name);
-    const frame = $("frame");
-
-    // Resolve the URL scheme. buildProxyPath returns:
-    //   "engine" -> let the engine use its own encoder (UV xor default)
-    //   "<path>" -> a custom path; wrap it as the encode function
-    //   null     -> "none" scheme: open in an iframe chain, no proxy path
-    const schemePath = buildProxyPath(url);
-    let encodeOverride = null;
-    if (schemePath && schemePath !== "engine") {
-      encodeOverride = (u) => schemePath;
-    }
-
-    if (schemePath === null) {
-      // "none" scheme: load the target directly into the frame (the service
-      // worker still rewrites it, but the URL bar shows Lux, not /service/...).
-      await eng.init();
-      frame.src = url;
-    } else if (eng.name === "scramjet") {
-      await eng.mount(url, frame);
-    } else {
-      await eng.mount(url, frame, encodeOverride);
-    }
-    $("stage").classList.add("active");
-    $("stage-crumb").textContent = safeHostname(url);
-    setStatus("");
-    onStageOpened();
-  } catch (err) {
-    setStatus(err.message, true);
-  }
+  tick();
+  setInterval(tick, 10000);
 }
 
-function safeHostname(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-// expose for the nesting adopt handler + dock
-window.Lux = { navigate };
-let pendingTarget = null;
+// ── Kill Switch ──────────────────────────────────────────────────────────
 
-function setStatus(msg, isErr) {
-  const s = $("status");
-  s.textContent = msg || "";
-  s.style.color = isErr ? "var(--danger)" : "var(--ink-soft)";
-}
-
-// ---------- cloak ----------
-async function openCloakedTarget(input) {
-  const url = normalizeUrl(input);
-  if (!url) return;
-  try {
-    await setTransportFor(getEngine().name);
-    await getEngine().init();
-    // openCloaked expects an encode function; for UV we use the engine encoder.
-    const enc = (u) => getEngine().encode(u) || "/uv/" + u;
-    await openCloaked(url, enc);
-    setStatus("Opened in cloaked window.");
-  } catch (e) {
-    setStatus(e.message, true);
-  }
-}
-
-// ---------- stage ----------
-function initStage() {
-  $("stage-close").onclick = () => {
-    $("frame").src = "about:blank";
-    $("stage").classList.remove("active");
-    onStageClosed();
-    currentTarget = null;
-    const s = loadSettings();
-    if (s.lockOnExit) lock();
-  };
-  $("bar-home").onclick = () => $("stage-close").click();
-  initTrueUrlReveal();
-}
-
-// ---------- true URL reveal ----------
-// Double-tap Control (or hold a configurable key) to flash the real (decoded)
-// destination URL in the crumb bar for 2 seconds. Useful to confirm where you
-// actually are without leaving the proxied session.
-function initTrueUrlReveal() {
-  let lastCtrl = 0;
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Control") return;
-    const now = Date.now();
-    if (now - lastCtrl < 400) {
-      // Double-tap detected.
-      flashTrueUrl();
-      lastCtrl = 0;
-    } else {
-      lastCtrl = now;
-    }
-  });
-}
-
-function flashTrueUrl() {
-  if (!currentTarget) return;
-  const crumb = $("stage-crumb");
-  if (!crumb) return;
-  const original = crumb.textContent;
-  crumb.textContent = currentTarget;
-  crumb.style.color = "var(--accent)";
-  crumb.style.fontFamily = "ui-monospace, monospace";
-  crumb.style.fontSize = "12px";
-  setTimeout(() => {
-    crumb.textContent = original;
-    crumb.style.color = "";
-    crumb.style.fontFamily = "";
-    crumb.style.fontSize = "";
-  }, 2000);
-}
-
-// ---------- lock ----------
-function initLock() {
-  const s = loadSettings();
-  armPanicKey({ decoy: s.panicDecoy, key: s.panicKey });
-  if (s.antiClose) enableAntiClose();
-
-  if (!s.lockEnabled) {
-    return; // unlocked mode
-  }
-  if (isUnlocked()) {
-    armIdle();
-    return;
-  }
-  // cold start
-  document.body.classList.add("lux-locked");
-  const input = $("lock-input");
-  input.focus();
-  input.onkeydown = async (e) => {
-    if (e.key !== "Enter") return;
-    const ok = await tryUnlock(input.value);
-    if (ok) {
-      if (pendingTarget) {
-        navigate(pendingTarget);
-        pendingTarget = null;
-      }
-    } else {
-      $("lock-msg").textContent = "Try again.";
-    }
-    input.value = "";
-  };
-}
-
-// ---------- kill switch ----------
 function initKillSwitch() {
   kill.arm();
   kill.onTrip((reason) => {
     $("kill-reason").textContent = reason || "";
   });
   $("kill-dismiss").onclick = () => kill.disarm();
-  // periodic IP check (every 60s) trips the switch on change
   if (loadSettings().killSwitch) {
     kill.checkIpOnce();
     setInterval(() => kill.checkIpOnce(), 60000);
   }
 }
 
-// ---------- session transfer (USB) ----------
+// ── Session Transfer ─────────────────────────────────────────────────────
+
 function initSessionTransfer() {
-  // Buttons are created dynamically in the settings panel via data attributes.
-  // We listen for clicks on elements with data-action.
   document.addEventListener("click", async (e) => {
     const el = e.target.closest("[data-action]");
     if (!el) return;
@@ -407,17 +529,15 @@ function initSessionTransfer() {
   });
 }
 
-// ---------- USB killswitch ----------
+// ── USB Killswitch ───────────────────────────────────────────────────────
+
 function initUsbKillswitch() {
-  // Start the heartbeat if the setting was on and a handle is stored.
-  // The actual folder pick is triggered from a settings button.
   document.addEventListener("click", async (e) => {
     const el = e.target.closest("[data-action='usb-pick']");
     if (!el) return;
     try {
       const name = await usb.pickFolder();
-      await usb.start((reason) => {
-        // Trip: redirect to the panic decoy.
+      await usb.start(() => {
         const s = loadSettings();
         document.body.innerHTML = "";
         location.replace(s.panicDecoy);
@@ -430,25 +550,10 @@ function initUsbKillswitch() {
   });
 }
 
-// ---------- multi-iframe + true title (wired into navigate/stage) ----------
-function onStageOpened() {
-  const frame = $("frame");
-  if (loadSettings().trueTitle) startTitleWatch(frame);
-  startIframeWatch($("stage"), (nestedSrc) => {
-    showToast("Nested frame detected. Open it?", () => {
-      // Navigate the main frame to the nested src (proxied already).
-      window.Lux.navigate(nestedSrc);
-    });
-  });
-}
-function onStageClosed() {
-  stopTitleWatch();
-  stopIframeWatch();
-}
+// ── Toast ─────────────────────────────────────────────────────────────────
 
-// Minimal toast.
 function showToast(msg, onClick) {
-  let t = document.getElementById("lux-toast");
+  let t = $("lux-toast");
   if (!t) {
     t = document.createElement("div");
     t.id = "lux-toast";
@@ -458,11 +563,11 @@ function showToast(msg, onClick) {
       "font-size:13px;display:flex;gap:12px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,0.3)";
     document.body.appendChild(t);
   }
-  t.innerHTML = "<span>" + msg + "</span>";
   const btn = document.createElement("button");
   btn.textContent = "Open";
   btn.style.cssText = "background:var(--bg);color:var(--ink);border:0;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px";
   btn.onclick = () => { if (onClick) onClick(); t.remove(); };
+  t.innerHTML = "<span>" + escapeHtml(msg) + "</span>";
   t.appendChild(btn);
   const close = document.createElement("button");
   close.textContent = "x";
@@ -472,7 +577,8 @@ function showToast(msg, onClick) {
   setTimeout(() => { if (t.parentElement) t.remove(); }, 10000);
 }
 
-// ---------- IP badge ----------
+// ── IP Badge ─────────────────────────────────────────────────────────────
+
 async function initIpBadge() {
   if (!loadSettings().showIpBadge) return;
   const ip = await kill.checkIpOnce();
@@ -481,7 +587,8 @@ async function initIpBadge() {
   }
 }
 
-// ---------- phase 2 ----------
+// ── Phase 2 ──────────────────────────────────────────────────────────────
+
 function initPhase2() {
   initVault().catch(() => {});
   initGames();
@@ -496,14 +603,9 @@ function initPhase2() {
       setStatus(e.message, true);
     }
   };
-  // Load the scratch note into the editor when the Notes panel opens.
-  const editorOpen = $("open-docs"); // any panel open is fine; we hook the editor close
-  document.querySelector('[data-close="panel-editor"]').addEventListener("click", () => {}, { once: true });
 }
 
-// ---------- games ----------
 function initGames() {
-  // ROM folder picker (File System Access API, with file-input fallback).
   if ($("rom-folder-btn")) {
     $("rom-folder-btn").onclick = () => pickRomFolder();
   }
@@ -513,24 +615,9 @@ function initGames() {
       if (f) launchRom(f);
     };
   }
-  // Render the games home when the panel is first opened.
-  const gamesPanel = $("panel-games");
-  const openObserver = () => {
-    if (gamesPanel.classList.contains("open")) {
-      renderGamesHome();
-    }
-  };
-  // Polling is cheap and avoids MutationObserver complexity for one panel.
-  document.querySelectorAll("[data-close]").forEach((b) => {
-    if (b.dataset.close === "panel-games") {
-      b.addEventListener("click", () => {}, { once: false });
-    }
-  });
 }
 
-// ---------- docs ----------
 function initDocs() {
-  // Load the how-it-works content into the docs panel on first open.
   const docsBody = $("docs-body");
   let loaded = false;
   const tryLoad = async () => {
@@ -539,24 +626,20 @@ function initDocs() {
     try {
       const r = await fetch("/how-it-works.html");
       const html = await r.text();
-      // Extract the inner content of the .wrap div (strip the page chrome).
       const m = html.match(/<div class="wrap">([\s\S]*?)<\/div>\s*<\/body>/);
       docsBody.innerHTML = m ? m[1] : html;
     } catch {
       docsBody.innerHTML = '<p style="color:var(--ink-soft)">Could not load docs.</p>';
     }
   };
-  // Observe panel-games open via the open-games click; docs is its own panel.
   document.addEventListener("click", (e) => {
     if (e.target.closest && e.target.closest("#panel-docs")) tryLoad();
   }, { once: true });
-  // Also load proactively when the docs button is clicked.
-  if ($("open-docs")) $("open-docs").addEventListener("click", tryLoad);
 }
 
 async function renderVault() {
   const list = $("vault-list");
-  list.innerHTML = "<div style='color:var(--ink-soft);font-size:13px'>Loading…</div>";
+  list.innerHTML = "<div style='color:var(--ink-soft);font-size:13px'>Loading\u2026</div>";
   try {
     const items = await listVault();
     if (!items.length) {
@@ -574,7 +657,6 @@ async function renderVault() {
       del.onclick = async () => {
         const blob = await openVaultItem(it.id);
         const url = URL.createObjectURL(blob);
-        // open via the proxy-less blob URL in a new tab
         window.open(url, "_blank");
       };
       const rm = document.createElement("button");
@@ -595,20 +677,16 @@ async function renderVault() {
     list.innerHTML = `<div style='color:var(--danger);font-size:13px'>${escapeHtml(e.message)}</div>`;
   }
 }
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
 function formatBytes(n) {
   if (n < 1024) return n + " B";
   if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
   return (n / 1048576).toFixed(1) + " MB";
 }
 
-// ---------- settings UI ----------
+// ── Settings UI ──────────────────────────────────────────────────────────
+
 function initSettingsUi() {
   buildSettingsUi(loadSettings());
-  $("open-settings").onclick = () => $("settings").classList.add("open");
   $("settings-done").onclick = () => $("settings").classList.remove("open");
   $("settings-reset").onclick = () => {
     if (confirm("Reset all Lux settings?")) {
@@ -636,47 +714,40 @@ function buildSettingsUi(s) {
 
   body.innerHTML = `
     <div class="group">
-      ${row("Engine", sel("engine", engines.map((e) => ({ v: e.name, t: e.label + (e.available ? "" : " (unavailable)") }))), "Ultraviolet is verified working. Scramjet is wired but blocked by a missing wasm; disabled until fixed.")}
+      ${row("Engine", sel("engine", engines.map((e) => ({ v: e.name, t: e.label + (e.available ? "" : " (unavailable)") }))), "Ultraviolet is the verified engine.")}
       ${row("Search engine", sel("searchEngine", listSearchEngines().map((e) => ({ v: e.id, t: e.label }))), "Used when you type a query, not a URL.")}
     </div>
     <div class="group">
       ${row("URL scheme", sel("urlScheme", [
-        { v: "encoded", t: "Obfuscated (/service/…)" },
+        { v: "encoded", t: "Obfuscated (/service/\u2026)" },
         { v: "plain", t: "Plain (/service/url)" },
-        { v: "math", t: "Math disguise (/math/…)" },
-        { v: "none", t: "No URL (iframe chains)" },
-      ]), "How the destination appears in the address bar.")}
-      ${row("Custom prefix", txt("customPrefix"), "Used by the plain scheme.")}
+        { v: "math", t: "Math disguise (/math/\u2026)" },
+        { v: "none", t: "No URL" },
+      ]))}
+      ${row("Custom prefix", txt("customPrefix"))}
     </div>
     <div class="group">
       ${row("Theme", sel("theme", [{ v: "light", t: "Light" }, { v: "dark", t: "Dark" }]))}
       ${row("Background", sel("background", [{ v: "dots", t: "Dots" }, { v: "stars", t: "Night sky" }, { v: "none", t: "None" }]))}
-      ${row("Show tools dock", toggle("showDock"))}
-      ${row("Fullscreen", sel("fullscreenMode", [{ v: "off", t: "Off" }, { v: "page", t: "Page (hide chrome)" }, { v: "full", t: "Browser fullscreen" }]))}
-      ${row("Window borders", sel("windowChrome", [{ v: "macos", t: "macOS" }, { v: "windows", t: "Windows" }]), "Panel and bar border style.")}
+      ${row("Auto-hide taskbar", toggle("taskbarHide"), "Taskbar hides unless you hover near the bottom.")}
     </div>
     <div class="group">
-      ${row("Lock enabled", toggle("lockEnabled"), "Require a phrase on cold start.")}
-      ${row("Unlock phrase", txt("lockPhrase"), "Defaults to a single letter.")}
+      ${row("Lock enabled", toggle("lockEnabled"), "Require a password on cold start.")}
       ${row("Re-lock when idle", toggle("lockOnIdle"))}
-      ${row("Idle minutes", `<input type="number" min="1" data-key="lockIdleMinutes" value="${s.lockIdleMinutes}">`)}
+      ${row("Idle minutes", "<input type=\"number\" min=\"1\" data-key=\"lockIdleMinutes\" value=\"" + s.lockIdleMinutes + "\">")}
       ${row("Re-lock when tab closes", toggle("lockOnExit"))}
-      ${row("Block devtools while locked", toggle("blockDevtools"), "Best-effort only; nothing client-side is a real barrier.")}
     </div>
     <div class="group">
-      ${row("Clear tracking params (ClearURLs)", toggle("clearUrls"))}
+      ${row("Clear tracking params", toggle("clearUrls"))}
       ${row("Ad / element blocker", toggle("adBlock"))}
-      ${row("Site event handling", toggle("eventHandling"), "Off freezes overlay traps (beforeunload etc.).")}
+      ${row("Site event handling", toggle("eventHandling"))}
       ${row("Google opt-out cookie", toggle("googleOptOut"))}
       ${row("Kill switch on network change", toggle("killSwitch"))}
       ${row("Show apparent IP", toggle("showIpBadge"))}
-      ${row("Anti-close warning", toggle("antiClose"))}
-      ${row("True title + favicon", toggle("trueTitle"), "Show the proxied site's real title and icon in the tab.")}
+      ${row("True title + favicon", toggle("trueTitle"), "Show the proxied site's real title and icon.")}
     </div>
     <div class="group">
-      <label>USB killswitch<small>Pick a USB folder. If it becomes unreadable (USB pulled), Lux redirects to the panic decoy and wipes the session. Chromium only.</small></label>
-      <button class="btn" data-action="usb-pick">Choose USB folder</button>
-      <label>Session transfer<small>Export settings, vault, and login cookies to a file (move via USB). Import restores them on another machine.</small></label>
+      <label>Session transfer<small>Export settings, vault, and cookies to a file.</small></label>
       <div style="display:flex;gap:6px">
         <button class="btn" data-action="export-session">Export</button>
         <button class="btn" data-action="import-session">Import</button>
@@ -693,10 +764,34 @@ function buildSettingsUi(s) {
       else val = el.value;
       const next = saveSettings({ [key]: val });
       applySettingsToDom(next);
+      if (key === "taskbarHide") {
+        document.body.dataset.taskbarHide = String(val);
+      }
     };
     el.addEventListener("change", handler);
   });
 }
+
 function escapeAttr(v) {
   return String(v ?? "").replace(/"/g, "&quot;");
+}
+
+// ── Status ───────────────────────────────────────────────────────────────
+
+function setStatus(msg, isErr) {
+  const s = $("status");
+  s.textContent = msg || "";
+  s.style.color = isErr ? "var(--danger)" : "var(--ink-soft)";
+}
+
+// ── Proxy Path ───────────────────────────────────────────────────────────
+
+function buildProxyPath(targetUrl) {
+  const s = loadSettings();
+  switch (s.urlScheme) {
+    case "math": return "/math/" + btoa(unescape(encodeURIComponent(targetUrl)));
+    case "plain": return (s.customPrefix || "/service/") + targetUrl;
+    case "none": return null;
+    default: return "engine";
+  }
 }

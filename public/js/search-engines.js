@@ -1,8 +1,13 @@
 // Search engines. The user picks one in settings; queries (input that isn't a
-// URL) are sent to it. Each engine has a build(url) that returns the search URL
-// through the proxy, and a label + icon for the UI.
+// URL) are sent to it. Order: Startpage, DuckDuckGo, Com (Google).
 
 export const ENGINES = [
+  {
+    id: "startpage",
+    label: "Startpage",
+    search: (q) => "https://www.startpage.com/sp/search?query=" + encodeURIComponent(q),
+    home: "https://www.startpage.com/",
+  },
   {
     id: "duckduckgo",
     label: "DuckDuckGo",
@@ -10,18 +15,12 @@ export const ENGINES = [
     home: "https://duckduckgo.com/",
   },
   {
-    id: "google",
-    label: "Google",
-    // The "udm=14" param forces plain verbatim web results, skipping the AI
-    // overview and the extra redirects. This is the cleanest Google search URL.
+    id: "com",
+    label: "Com (Google)",
+    // udm=14 forces plain verbatim web results, skipping the AI overview and
+    // the extra redirects. This is the cleanest Google search URL.
     search: (q) => "https://www.google.com/search?udm=14&q=" + encodeURIComponent(q),
     home: "https://www.google.com/",
-  },
-  {
-    id: "startpage",
-    label: "Startpage",
-    search: (q) => "https://www.startpage.com/sp/search?query=" + encodeURIComponent(q),
-    home: "https://www.startpage.com/",
   },
   {
     id: "brave",

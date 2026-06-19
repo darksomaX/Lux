@@ -63,9 +63,12 @@ if (existsSync(uvConfigPath)) {
     .replace("'/uv.client.js'", "'/uv/uv.client.js'")
     .replace("'/uv.bundle.js'", "'/uv/uv.bundle.js'")
     .replace("'/uv.config.js'", "'/uv/uv.config.js'")
-    .replace("'/uv.sw.js'", "'/uv/uv.sw.js'");
+    .replace("'/uv.sw.js'", "'/uv/uv.sw.js'")
+    // Change the proxy prefix from /service/ to /s/ (shorter, cleaner).
+    // Handle both quote styles the upstream may emit.
+    .replace(/prefix:\s*["']\/service\/["']/, "prefix: \"/s/\"");
   await writeFile(uvConfigPath, cfg);
-  console.log("OK rewrote uv.config.js paths -> /uv/*");
+  console.log("OK rewrote uv.config.js paths -> /uv/*, prefix -> /s/");
 }
 
 // Make uv.sw.js self-contained AND wire its fetch handler. The npm package's

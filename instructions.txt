@@ -1,0 +1,126 @@
+You are taking over development of Lux, a self-hostable anti-censorship web proxy.
+Project location: C:\Users\santi\Documents\workspace\proxy
+GitHub: darksomaX/Lux
+Stack: Node + Express + vanilla ESM frontend. Built on Ultraviolet over the wisp protocol with an Epoxy transport. Service worker interception.
+==================================================
+SECTION 1: WHAT LUX IS AND HOW IT WORKS
+==================================================
+Lux is a self-hostable anti-censorship web proxy. A user runs it on their own machine or server, opens it in a browser, types a blocked URL, and the site loads through an encrypted tunnel that a network censor cannot see.
+HOW A PROXIED PAGE LOADS (step by step):
+1. The user opens Lux and types "wikipedia.org".
+2. Lux's JavaScript registers a service worker (uv.sw.js) at root scope "/". The server serves this worker with a "Service-Worker-Allowed: /" header so it can claim the root scope despite its script living at /uv.sw.js.
+3. The service worker's fetch event handler is now installed. Every HTTP request the page makes passes through it.
+4. Lux encodes the target URL using UV's XOR codec: wikipedia.org becomes /service/hvtrs8%2F-wkkkpgdka... The encoded string is set as the src of an iframe.
+5. The browser tries to fetch /service/hvtrs8%2F-... The service worker intercepts it (it matches the /service/ prefix) and decodes it back to wikipedia.org.
+6. The service worker cannot fetch wikipedia.org directly (that is what the censor blocks). Instead, it opens a single WebSocket to the server's /wisp/ endpoint. The wisp protocol multiplexes many logical streams inside that one socket.
+7. On top of wisp runs Epoxy, which performs the real HTTPS/TLS exchange with wikipedia.org: the full handshake, the HTTP request, the response.
+8. The response flows back: wikipedia.org -> Epoxy -> wisp -> service worker -> iframe. The service worker rewrites all links and resources in the HTML so they also route through /service/...
+9. To the censor, the browser made one wss:// connection to your domain. No blocked hostname appeared in any URL, SNI field, or DNS query.
+WHY IT EVADES CENSORSHIP:
+- IP/hostname blocklists: defeated. The browser only contacts your server.
+- URL/SNI string filtering: defeated. The destination is XOR-encoded. Only your hostname is cleartext.
+- Logins (Gmail, OAuth): work because all traffic is same-origin to your domain.
+- DPI hunting proxy traffic: harder. The tunnel looks like a normal WSS connection.
+- Active probing / domain blocking: not defeated. Lux is designed to redeploy fast.
+ULTRAVIOLET VS SCRAMJET:
+Both are interception proxies by MercuryWorkshop. Ultraviolet uses URL-string rewriting (rewrites every URL to /service/<encoded>, decodes on return). Simple, fast, fully working in Lux. Scramjet uses runtime injection (realm pollution + JS proxies) to intercept property accesses at runtime. More thorough but more complex. Scramjet v1 has a confirmed IndexedDB controller init bug and is deprecated. Scramjet v2 is a complete rewrite, currently alpha, with a separate npm package (@mercuryworkshop/scramjet-controller) and official architecture docs.
+SELF-HOSTING:
+npm install && npm run build && npm start. Server is Express + wisp-js on one Node process. Behind nginx/Caddy for TLS. Two modes: single (local, no auth) and shared (UUID+password session login, for VPS hosting). Server binds 0.0.0.0 so LAN devices can connect.
+CURRENT STATE (v0.3.1, committed locally, NOT pushed):
+87/87 tests pass. Verified features: lock mode, cloak, encrypted vault, session export/import, USB killswitch, kill switch on network change, ClearURLs param stripping, ad blocker, true title/favicon, multi-iframe detection, true URL reveal, shared-mode session login, SHA integrity check in installers. UV proxy verified working in a real browser (example.com renders). Scramjet disabled.
+==================================================
+SECTION 2: VERIFICATION CHECKLIST
+==================================================
+Before making ANY changes, verify the current state. Boot the server (npm run build && npm start), open http://localhost:8080 in Chromium. Test each:
+1. Lock screen: Cold start shows a lock prompt. Type "a" and press Enter. Home screen appears.
+2. Proxy load: Type "example.com", press Enter. Stage opens, you see real "Example Domain" page render in the frame.
+3. Google isolation: Type "google.com". Should NOT be logged into your main Google account.
+4. Cloak: Type a URL, click the detective icon inside the search bar. Popup opens with about:blank address showing the proxied site.
+5. Settings: Click gear (top-left). Panel slides in. Toggle theme to dark. Background changes, persists on reload.
+6. Search engines: In settings pick Google. Type a multi-word query. Should go to Google search results.
+7. True URL reveal: While proxied, double-tap Control key. Crumb bar flashes the real URL for 2 seconds.
+8. Bottom bar apps: Click Notes, Vault, Games. Each opens its panel. Only Browser is highlighted by default.
+9. Help tooltip: Click "?" (bottom-left). Tips tooltip appears.
+10. Panic key: Press backtick (`). Page redirects to a decoy site.
+11. Session export: In settings click Export. JSON file downloads.
+12. Session import: In a fresh profile, settings, click Import, pick the file. Settings + vault restore.
+13. Shared mode: Stop server. Run "LUX_MODE=shared npm start". Open localhost. Should get login page. Enter any password. Lux loads.
+14. LAN access: From phone on same WiFi, navigate to http://<your-pc-ip>:8080. Lux loads.
+15. SHA check: Run install.sh or install.ps1. Prints a SHA-256 hash at the end.
+==================================================
+SECTION 3: HOW TO TEST (USE THE WEBAPP-TESTING SKILL)
+==================================================
+Read the skill at .agents/skills/webapp-testing/SKILL.md. Its core pattern:
+- Boot the real server on a port.
+- Use Playwright to launch headless Chromium.
+- Capture pageerror AND console error events. These surface import/wiring bugs instantly.
+- Do NOT trust test counts. Actually read the rendered content of the proxied iframe to confirm the proxy works.
+- jsdom CANNOT run ES modules or service workers. It gives false failures. Always use a real browser.
+Example test pattern (from tests/browser/proxy-real.test.mjs):
+- Launch Chromium, goto Lux, unlock, fill search input, press Enter.
+- Poll page.frames() for one whose URL includes /service/ (the proxied path).
+- Read that frame's body text. Assert it contains "Example Domain".
+- This is the ONLY reliable proof the proxy works.
+==================================================
+SECTION 4: YOUR TASKS (in priority order)
+==================================================
+TASK 1: BUG HUNT AND FIX
+Go through every item in the verification checklist (Section 2) using the browser testing pattern. For each bug found, write it in bug_findings.md with: the feature name, the exact error (pageerror/console text + file:line), the root cause, and the fix applied. FIX every bug, do not just document. After fixing, re-verify with a browser run showing the rendered content.
+Known issue to NOT waste time on: Scramjet v1 is disabled due to an IndexedDB controller init bug. Do not try to fix v1.
+TASK 2: UPGRADE SCRAMJET TO V2
+Install @mercuryworkshop/scramjet-controller (the v2 package). Read the architecture docs at https://mercuryworkshop-scramjet.mintlify.app/concepts/architecture and the reference app at https://github.com/MercuryWorkshop/Scramjet-App. Wire Scramjet v2 as a selectable engine in public/js/engine.js alongside UV. Both use the same wisp backend. Test end to end in a real browser: switch engine to Scramjet, load example.com, confirm real content renders. Offer two engine choices in settings: Ultraviolet (default, verified) and Scramjet v2.
+TASK 3: DEVTOOLS REQUEST VIEWER
+Inspired by scramjet.mercurywork.shop which shows proxied requests in real time, add a devtools panel (toggleable in settings) that shows proxied requests live: method, decoded URL, status, size. Client-side overlay reading from the service worker fetch events via postMessage.
+TASK 4: OPTIONAL PHONE PROXY RESEARCH NOTE
+Research and document (in bug_findings.md or a separate research.md) how a user could route ALL phone app traffic through Lux. Key finding from prior research: Lux is a web proxy (service worker based) and cannot capture phone app traffic. The realistic path is a companion tool: mitmproxy in transparent mode on the PC sharing a hotspot, or an always-on WireGuard VPN to a VPS running Lux. Document this clearly for the user. Do not attempt to build it inside Lux.
+==================================================
+SECTION 5: RULES
+==================================================
+1. Verify EVERY change in a real browser. "Tests pass" is NOT sufficient. Show the rendered content.
+2. Run "node --check <file>" on every JS file before committing. Zero syntax errors. Zero import path mistakes. This has been a recurring problem.
+3. Do NOT push to GitHub. Commit locally only. The user will verify and push.
+4. Be honest in bug_findings.md about what works and what does not. Do not claim success without evidence.
+5. Do not introduce new dependencies without checking their license compatibility with AGPL-3.0.
+6. The build script (scripts/build-uv.mjs) copies engine bundles into public/. Always run "npm run build" after changing engine code or adding new bundles.
+7. The service worker MUST be self-contained: the build prepends importScripts for the UV bundle and appends the fetch handler wiring. Do not load uv.bundle.js separately expecting the SW to see it (SW scope is isolated from the page).
+==================================================
+SECTION 6: KEY FILE MAP
+==================================================
+server/index.js        Express + wisp + session auth + SW routes with Service-Worker-Allowed header
+server/config.js       Mode (single/shared), port, host, session TTL
+server/sessions.js     UUID session creation + password hashing + TTL
+server/stats.js        Active-user counter + SSE
+public/index.html      Home UI: Lux title, search bar, gear, dock, lock, panels
+public/js/main.js      Orchestrator: boot, navigate, settings UI, all init functions
+public/js/engine.js    Engine abstraction (UV working, Scramjet to be upgraded to v2)
+public/js/transport.js bare-mux setup, Epoxy over wisp
+public/js/settings.js  Settings store (localStorage), all defaults
+public/js/lock.js      Cold-start lock, idle re-lock, devtools guard
+public/js/cloak.js     about:blank popup, disguises, panic key, anti-close
+public/js/vault.js     Encrypted IndexedDB vault (AES-GCM + native gzip)
+public/js/session.js   Session export/import for USB transfer
+public/js/usb-killswitch.js  File System Access API heartbeat + wipe
+public/js/true-title.js      Real title/favicon from proxied page
+public/js/iframe-watch.js    Nested iframe detection + toast
+public/js/extensions.js      ClearURLs, ad block, event toggle, Google opt-out
+public/js/kill-switch.js     Network change + IP change trip
+public/js/games.js     webretro loader + ROM folder (File System Access API)
+public/js/search-engines.js  DuckDuckGo, Google (udm=14), Startpage, Brave, Bing
+scripts/build-uv.mjs   Copies + patches engine bundles, wires SW fetch handler
+tests/browser/         Playwright browser tests (proxy-real, circumvent, ui)
+tests/block-sim/       Denylist censor sandbox
+tests/vault/           Crypto round-trip test
+tests/e2e/             Wisp tunnel to example.com test
+==================================================
+SECTION 7: LESSONS LEARNED (avoid these mistakes)
+==================================================
+1. The UV service worker (uv.sw.js) opens with "var h = self.Ultraviolet" but service workers are ISOLATED from the page. The bundle must be importScripts'd INSIDE the SW, not loaded on the page.
+2. uv.sw.js defines the UVServiceWorker class but never instantiates it or attaches a fetch listener. The build must append both.
+3. getEngine() must NOT cache. The settings UI changes the engine at runtime. A stale cache silently keeps the old engine.
+4. navigator.serviceWorker.ready resolves when a SW is "active" but NOT when it "controls" the page. You must wait for navigator.serviceWorker.controller to be your SW before navigating, using the controllerchange event.
+5. bare-mux exports BareMuxConnection as a named ESM export, NOT as window.BareMux. transport.js attaches it to window.BareMux for compatibility.
+6. scramjet.bundle.js is an ESM build (has export statements). Loading it as a classic script throws "Unexpected token export". scramjet.all.js is the IIFE build. For v2 this may change.
+7. The libcurl-transport npm package does NOT ship its wasm. Epoxy's wasm IS shipped. Both engines should use Epoxy.
+8. Two root-scoped service workers cannot coexist. Switching engines must unregister the old one first, but carefully: do not unregister an installing SW (it might be yourself).
+9. Node fetch() does not let you override the Host header. Use raw TCP (node:net) to test censor middleware with custom Host headers.
+10. jsdom cannot run type="module" scripts or service workers. It gives false failures. Always use Playwright with real Chromium for feature verification.

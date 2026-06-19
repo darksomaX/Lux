@@ -108,6 +108,7 @@ app.use("/epoxy", express.static(join(publicDir, "epoxy"), transportStaticOption
 app.use("/scramjet", express.static(join(publicDir, "scramjet"), transportStaticOptions));
 app.use("/libcurl", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/cloak", express.static(join(publicDir, "cloak"), transportStaticOptions));
+app.use("/css", express.static(join(publicDir, "css"), transportStaticOptions));
 app.use("/js", express.static(join(publicDir, "js"), transportStaticOptions));
 app.use("/assets", express.static(join(publicDir, "assets"), { fallthrough: false }));
 

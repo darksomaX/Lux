@@ -51,6 +51,7 @@ function bootServer() {
     app.use("/scramjet", express.static(join(publicDir, "scramjet"), opts));
     app.use("/libcurl", express.static(join(publicDir, "libcurl"), opts));
     app.use("/cloak", express.static(join(publicDir, "cloak")));
+    app.use("/css", express.static(join(publicDir, "css"), opts));
     app.use("/js", express.static(join(publicDir, "js"), opts));
     app.use("/assets", express.static(join(publicDir, "assets")));
     app.get("/uv.sw.js", (req, res) => { res.set("Service-Worker-Allowed", "/"); res.sendFile(join(publicDir, "uv/uv.sw.js")); });
@@ -185,14 +186,22 @@ async function main() {
   const uiChecks = [
     ["Lux title", /id="title">Lux</],
     ["search input", /id="search-input"/],
-    ["cloak button", /id="cloak-btn"/],
+    ["incognito button", /id="incognito-btn"/],
     ["gear/settings button", /id="open-settings"/],
     ["docs button", /id="open-docs"/],
     ["games button", /id="open-games"/],
     ["github link", /darksomaX\/Lux/],
     ["help button", /id="open-help"/],
-    ["bottom bar", /id="bottombar"/],
-    ["browser app default-active", /bar-app active.*data-app="browser"/],
+    ["taskbar", /id="taskbar"/],
+    ["browser toolbar", /id="browser-toolbar"/],
+    ["toolbar URL input", /id="toolbar-url"/],
+    ["nav back button", /id="nav-back"/],
+    ["nav forward button", /id="nav-forward"/],
+    ["nav stop button", /id="nav-stop"/],
+    ["nav reload button", /id="nav-reload"/],
+    ["nav info button", /id="nav-info"/],
+    ["nav close button", /id="nav-close"/],
+    ["browser app default-active", /taskbar-app active.*data-app="browser"/],
     ["lock screen", /id="lockscreen"/],
     ["vault panel", /id="panel-vault"/],
     ["emulator panel", /id="panel-games"/],
