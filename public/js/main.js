@@ -24,6 +24,7 @@ import { startIframeWatch, stopIframeWatch } from "./iframe-watch.js";
 import { startTitleWatch, stopTitleWatch } from "./true-title.js";
 import * as usb from "./usb-killswitch.js";
 import * as Tabs from "./tabs.js";
+import { maybeShowScramjetPopup } from "./sj-recommend.js";
 
 const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
@@ -350,6 +351,8 @@ function navigate(input) {
   setStatus("Loading...");
   if (window.__luxToolbar) window.__luxToolbar.showStop();
   onStageOpened();
+  // Check if this site is better supported by Scramjet.
+  setTimeout(() => maybeShowScramjetPopup(url), 3000);
 }
 
 function navigateNewTab(url) {
