@@ -110,6 +110,7 @@ app.use("/libcurl", express.static(join(publicDir, "libcurl"), transportStaticOp
 app.use("/cloak", express.static(join(publicDir, "cloak"), transportStaticOptions));
 app.use("/css", express.static(join(publicDir, "css"), transportStaticOptions));
 app.use("/js", express.static(join(publicDir, "js"), transportStaticOptions));
+app.use("/data", express.static(join(publicDir, "data"), transportStaticOptions));
 app.use("/assets", express.static(join(publicDir, "assets"), { fallthrough: false }));
 
 // The proxy service workers must control the proxy path (/service/ for UV,

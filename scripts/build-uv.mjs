@@ -81,16 +81,52 @@ const uvSwPath = join(root, "public/uv/uv.sw.js");
 if (existsSync(uvSwPath)) {
   let swSrc = await readFile(uvSwPath, "utf8");
   if (!swSrc.startsWith("importScripts")) {
+    // Read the filter data and inline it into the SW (can't importScripts an
+    // ESM file — filters.js uses export). We strip the export keywords and
+    // embed the arrays + functions directly.
+    const filtersSrc = await readFile(join(root, "public/data/filters.js"), "utf8");
+    const filtersInlined = filtersSrc
+      .replace(/^export\s+/gm, "")
+      .replace(/^\/\/.*$/gm, ""); // strip comments for compactness
+
     const wiring =
       'importScripts("/uv/uv.bundle.js", "/uv/uv.config.js");\n' +
+      "// === Ad-block filter data (inlined from data/filters.js) ===\n" +
+      filtersInlined +
+      "// === End filter data ===\n\n" +
       swSrc +
       '\n// Wire the fetch handler (appended by build-uv.mjs).\n' +
+      '// Includes ad-blocking: drops requests to known ad hosts and injects\n' +
+      '// cosmetic CSS into proxied HTML responses.\n' +
       'const uvSW = new self.UVServiceWorker();\n' +
       'self.addEventListener("fetch", (event) => {\n' +
-      '  if (uvSW.route({ request: event.request })) {\n' +
-      '    event.respondWith(uvSW.fetch({ request: event.request }));\n' +
+      '  const req = event.request;\n' +
+      '  // Ad-blocking: check if the destination hostname is a known ad host.\n' +
+      '  try {\n' +
+      '    const url = new URL(req.url);\n' +
+      '    const dest = req.destination;\n' +
+      '    if (dest !== "document" && dest !== "" && isAdHost(url.hostname)) {\n' +
+      '      event.respondWith(new Response("", { status: 204 }));\n' +
+      '      return;\n' +
+      '    }\n' +
+      '  } catch {}\n' +
+      '  if (uvSW.route({ request: req })) {\n' +
+      '    event.respondWith(injectCosmetics(uvSW.fetch({ request: req })));\n' +
       '  }\n' +
-      '});\n';
+      '});\n' +
+      '// Inject cosmetic CSS into proxied HTML documents to hide ad elements.\n' +
+      'async function injectCosmetics(promise) {\n' +
+      '  const resp = await promise;\n' +
+      '  const ct = resp.headers.get("content-type") || "";\n' +
+      '  if (!ct.includes("text/html")) return resp;\n' +
+      '  const css = "<style>" + cosmeticCss() + "</style>";\n' +
+      '  const body = await resp.text();\n' +
+      '  const injected = body.replace("<head>", "<head>" + css) || (css + body);\n' +
+      '  return new Response(injected, {\n' +
+      '    status: resp.status, statusText: resp.statusText,\n' +
+      '    headers: resp.headers,\n' +
+      '  });\n' +
+      '}\n';
     await writeFile(uvSwPath, wiring);
     console.log("OK made uv.sw.js self-contained + wired fetch handler");
   }
