@@ -22,14 +22,19 @@ async function gzip(bytes) {
   const writer = cs.writable.getWriter();
   writer.write(bytes);
   writer.close();
-  const out = [];
+  const chunks = [];
+  let total = 0;
   const reader = cs.readable.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    out.push(value);
+    chunks.push(value);
+    total += value.length;
   }
-  return new Uint8Array(out.reduce((acc, b) => acc + b.length, 0) ? out.flatMap((b) => [...b]) : []);
+  const merged = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { merged.set(c, off); off += c.length; }
+  return merged;
 }
 async function gunzip(bytes) {
   const ds = new DecompressionStream("gzip");

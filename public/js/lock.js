@@ -39,20 +39,32 @@ export function dismiss() {
   } catch {}
 }
 
-export function tryUnlock(phrase) {
+export async function tryUnlock(phrase) {
   const s = loadSettings();
   const stored = s.lockPassword;
   // No password set means anyone can unlock — treat as match.
-  if (!stored || phrase === stored) {
-    try {
-      sessionStorage.setItem(SESSION_KEY, "1");
-    } catch {}
+  if (!stored) {
+    try { sessionStorage.setItem(SESSION_KEY, "1"); } catch {}
+    dismiss();
+    armIdle();
+    window.dispatchEvent(new CustomEvent("lux:lock-change", { detail: { locked: false } }));
+    return true;
+  }
+  // Compare SHA-256 hash, not plaintext.
+  const hash = await sha256(phrase);
+  if (hash === stored) {
+    try { sessionStorage.setItem(SESSION_KEY, "1"); } catch {}
     dismiss();
     armIdle();
     window.dispatchEvent(new CustomEvent("lux:lock-change", { detail: { locked: false } }));
     return true;
   }
   return false;
+}
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // Show the lock screen and wire the password flow.
@@ -95,13 +107,15 @@ export function initLock() {
       dismiss();
     };
 
-    const doCreate = () => {
+    const doCreate = async () => {
       const val = input.value.trim();
       if (!val) {
         msg.textContent = "Enter a phrase.";
         return;
       }
-      saveSettings({ lockPassword: val });
+      // Store SHA-256 hash, not plaintext.
+      const hash = await sha256(val);
+      saveSettings({ lockPassword: hash });
       msg.textContent = "";
       tryUnlock(val);
     };

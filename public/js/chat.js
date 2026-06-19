@@ -26,7 +26,18 @@ export function initChat() {
   nameInput.value = getSavedName();
   nameInput.onchange = () => saveName(nameInput.value.trim() || "Anonymous");
 
-  connect();
+  // Connect lazily: only when the chat panel is actually opened, not at boot.
+  // This avoids opening a WebSocket on every page load for users who never
+  // use chat. The first time the panel becomes visible, connect.
+  const chatPanel = $("panel-chat");
+  if (chatPanel) {
+    const observer = new MutationObserver(() => {
+      if (chatPanel.classList.contains("open") && !ws) {
+        connect();
+      }
+    });
+    observer.observe(chatPanel, { attributes: true, attributeFilter: ["class"] });
+  }
 
   sendBtn.onclick = sendMessage;
   input.addEventListener("keydown", (e) => {

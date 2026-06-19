@@ -82,7 +82,7 @@ const uv = {
     const existing = await navigator.serviceWorker.getRegistrations();
     for (const reg of existing) {
       if (!reg.scope.endsWith("/")) continue;
-      const script = reg.active?.scriptUrl || "";
+      const script = reg.active?.scriptURL || "";
       if (script && !script.includes("uv.sw.js")) {
         await reg.unregister();
       }
@@ -222,7 +222,7 @@ const scramjet = {
     const existing = await navigator.serviceWorker.getRegistrations();
     for (const reg of existing) {
       if (!reg.scope.endsWith("/")) continue;
-      const script = reg.active?.scriptUrl || "";
+      const script = reg.active?.scriptURL || "";
       if (script && script.includes("uv.sw.js")) {
         await reg.unregister();
       }
