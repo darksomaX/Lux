@@ -130,6 +130,32 @@ const uv = {
 const PREFIX_SJ = "/~/sj/";
 let scramjetController = null; // Singleton controller instance
 
+// Wait for the SJ SW to become navigator.serviceWorker.controller. The
+// controller's RPC works via MessageChannel, but fetch interception needs the
+// SW to actually control the page. After unregistering UV and registering SJ,
+// we poll controllerchange until the SJ SW takes over.
+function waitForSjControl() {
+  return new Promise((resolve) => {
+    if (navigator.serviceWorker.controller) {
+      const url = navigator.serviceWorker.controller.scriptURL || "";
+      if (url.includes("sj.sw.js")) return resolve();
+    }
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const handler = () => {
+      const c = navigator.serviceWorker.controller;
+      if (c && (c.scriptURL || "").includes("sj.sw.js")) {
+        navigator.serviceWorker.removeEventListener("controllerchange", handler);
+        finish();
+      }
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", handler);
+    // The SJ SW has skipWaiting + clients.claim, so this should resolve fast.
+    // Timeout after 5s as a safety net.
+    setTimeout(finish, 5000);
+  });
+}
+
 // Try to initialize the full Scramjet controller
 async function tryInitController() {
   if (scramjetController) return true;
@@ -137,14 +163,14 @@ async function tryInitController() {
   try {
     const { loadClassicScript, registerSw, createScramjetTransport } = await import("./scramjet-transport.js");
 
-    // Load the scramjet v2 runtime IIFE
-    await loadClassicScript("/scramjet/scramjet.js");
+    // Load the scramjet v2 runtime IIFE (Tinf0il serves this at /scram/)
+    await loadClassicScript("/scram/scramjet.js");
     if (typeof globalThis.$scramjet === "undefined") {
       throw new Error("scramjet.js did not set globalThis.$scramjet");
     }
 
-    // Load the controller IIFE
-    await loadClassicScript("/scramjet/controller.api.js");
+    // Load the controller API IIFE (served at /controller/)
+    await loadClassicScript("/controller/controller.api.js");
     if (typeof globalThis.$scramjetController === "undefined") {
       throw new Error("controller.api.js did not set globalThis.$scramjetController");
     }
@@ -158,9 +184,9 @@ async function tryInitController() {
     // Modify controller config in-place (Tinf0il pattern)
     const { Controller, config } = globalThis.$scramjetController;
     config.prefix = PREFIX_SJ;
-    config.scramjetPath = "/scramjet/scramjet.js";
-    config.injectPath = "/scramjet/controller.inject.js";
-    config.wasmPath = "/scramjet/scramjet.wasm";
+    config.scramjetPath = "/scram/scramjet.js";
+    config.injectPath = "/controller/controller.inject.js";
+    config.wasmPath = "/scram/scramjet.wasm";
 
     const controller = new Controller({
       serviceworker: sw,
@@ -182,7 +208,7 @@ const scramjet = {
   available: true,
 
   async init() {
-    // Unregister UV's SW if active
+    // Unregister UV's SW if active so SJ can take over the root scope.
     const existing = await navigator.serviceWorker.getRegistrations();
     for (const reg of existing) {
       if (!reg.scope.endsWith("/")) continue;
@@ -191,8 +217,10 @@ const scramjet = {
         await reg.unregister();
       }
     }
-    // Try controller init (non-blocking — will fall back gracefully)
-    tryInitController().catch(() => {});
+    // Try the full Tinf0il-style controller init. If it fails (SW control
+    // timing, transport issues), mount() falls back to the /sj-proxy server-
+    // side rewriting path, which renders pages correctly.
+    await tryInitController();
   },
 
   encode(url) {

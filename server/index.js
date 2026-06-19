@@ -106,6 +106,11 @@ app.use("/uv", express.static(join(publicDir, "uv"), transportStaticOptions));
 app.use("/baremux", express.static(join(publicDir, "baremux"), transportStaticOptions));
 app.use("/epoxy", express.static(join(publicDir, "epoxy"), transportStaticOptions));
 app.use("/scramjet", express.static(join(publicDir, "scramjet"), transportStaticOptions));
+// Tinf0il-style Scramjet paths: /scram/ (scramjet runtime), /controller/
+// (controller API + SW), /clients/ (libcurl transport with embedded wasm).
+app.use("/scram", express.static(join(publicDir, "scramjet"), transportStaticOptions));
+app.use("/controller", express.static(join(publicDir, "controller"), transportStaticOptions));
+app.use("/clients", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/libcurl", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/cloak", express.static(join(publicDir, "cloak"), transportStaticOptions));
 app.use("/css", express.static(join(publicDir, "css"), transportStaticOptions));

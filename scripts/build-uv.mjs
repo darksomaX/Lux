@@ -19,6 +19,9 @@ const targets = [
   { name: "epoxy transport", from: "@mercuryworkshop/epoxy-transport/dist", to: "public/epoxy", required: true },
   { name: "Scramjet bundle", from: "@mercuryworkshop/scramjet/dist", to: "public/scramjet", required: false },
   { name: "libcurl transport", from: "@mercuryworkshop/libcurl-transport/dist", to: "public/libcurl", required: false },
+  // Scramjet controller v2 files (Tinf0il pattern): controller.api.js,
+  // controller.sw.js, controller.inject.js
+  { name: "Scramjet controller", from: "@mercuryworkshop/scramjet-controller/dist", to: "public/controller", required: false },
 ];
 
 let failed = false;
