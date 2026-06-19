@@ -1,53 +1,50 @@
-// Popup pre-permission. Browsers only show the "allow popups" prompt after a
-// user gesture, and the cloak feature needs popups. If the user clicks Cloak
-// for the first time without having allowed popups, the popup is silently
-// blocked and the feature looks broken.
+// Popup permission helper. The old version opened+closed a real popup on the
+// user's first click, which was annoying and increasingly blocked by Chrome.
 //
-// The fix (used by Interstellar and other proxies): open and immediately close
-// a throwaway popup on the first user interaction. That triggers the browser's
-// permission prompt once, up front, so a later Cloak click works instantly.
-//
-// We do this lazily the first time the user focuses the search input or clicks
-// anywhere, whichever comes first.
+// New approach: don't prime anything. When the user clicks Cloak, try
+// window.open(). If it returns null (blocked), show a toast telling them to
+// allow popups. This is less aggressive and more honest.
 
-let primed = false;
-
-export function primePopupPermission() {
-  if (primed) return;
-  primed = true;
-  try {
-    const probe = window.open("", "_blank");
-    if (probe) {
-      // Permission already granted or prompt will show. Close it right away so
-      // the user barely notices. If the browser blocked it, probe is null and
-      // we'll try again next interaction (primed guard prevents spamming).
-      probe.close();
-    }
-  } catch {
-    // Some browsers throw on window.open without a gesture; ignore.
-  }
-}
+let popupAllowed = null; // null = unknown, true/false after first attempt
 
 export function isPopupAllowed() {
-  // There's no clean synchronous API to read popup permission, so we probe.
-  // This is best-effort.
+  if (popupAllowed !== null) return popupAllowed;
+  // We don't probe anymore — just return unknown and let the actual cloak
+  // attempt reveal the answer.
+  return null;
+}
+
+// Try to open a popup. Returns the popup window or null. Updates popupAllowed.
+export function tryPopup(url = "") {
   try {
-    const probe = window.open("", "_blank");
-    if (!probe) return false;
-    probe.close();
-    return true;
+    const popup = window.open(url, "_blank");
+    popupAllowed = !!popup;
+    return popup;
   } catch {
-    return false;
+    popupAllowed = false;
+    return null;
   }
 }
 
-// Attach one-shot listeners so we prime on the first real gesture.
+// If the cloak popup was blocked, show a toast with instructions.
+export function showPopupBlockedToast() {
+  if (popupAllowed === false) {
+    const toast = document.createElement("div");
+    toast.style.cssText =
+      "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:100;" +
+      "background:var(--ink);color:var(--bg);padding:14px 20px;border-radius:10px;" +
+      "font-size:13px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.3)";
+    toast.innerHTML =
+      "Popups are blocked. Click the popup icon in your browser's address bar " +
+      "and allow popups for this site, then try again. " +
+      '<button style="margin-left:8px;background:var(--bg);color:var(--ink);border:0;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">OK</button>';
+    toast.querySelector("button").onclick = () => toast.remove();
+    document.body.appendChild(toast);
+    setTimeout(() => { if (toast.parentElement) toast.remove(); }, 10000);
+  }
+}
+
+// No-op for backward compat (main.js imports armPrimeOnFirstGesture).
 export function armPrimeOnFirstGesture() {
-  const prime = () => {
-    primePopupPermission();
-    window.removeEventListener("pointerdown", prime);
-    window.removeEventListener("keydown", prime);
-  };
-  window.addEventListener("pointerdown", prime, { once: true });
-  window.addEventListener("keydown", prime, { once: true });
+  // Intentionally empty. We no longer prime popups aggressively.
 }

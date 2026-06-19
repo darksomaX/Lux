@@ -179,17 +179,37 @@ app.get("/sj.sw.js", (req, res) => {
   // but does NOT wire a fetch event listener. Tinf0il generates a wrapper SW
   // that importScripts the controller SW and adds the fetch handler. We do
   // the same here.
-  res.send(`// Generated SJ SW wrapper (Tinf0il pattern).
+  res.send(`// Generated SJ SW wrapper (Tinf0il pattern) + devtools reporting.
 importScripts("/controller/controller.sw.js");
 self.addEventListener("fetch", (event) => {
   try {
     if ($scramjetController.shouldRoute(event)) {
-      event.respondWith($scramjetController.route(event));
+      event.respondWith(sjReport($scramjetController.route(event), event.request));
     }
   } catch (e) {
     console.error("[sj.sw] fetch handler error:", e);
   }
 });
+// Report proxied request info to the DevTools panel (same pattern as UV SW).
+async function sjReport(promise, req) {
+  try {
+    const resp = await promise;
+    const size = resp.headers.get("content-length") || "?";
+    const clients = await self.clients.matchAll({ type: "window" });
+    for (const client of clients) {
+      client.postMessage({
+        luxDevtools: true,
+        method: req.method,
+        url: req.url,
+        status: resp.status,
+        size: size,
+      });
+    }
+    return resp;
+  } catch (e) {
+    return new Response("SJ fetch error: " + e.message, { status: 502 });
+  }
+}
 `);
 });
 

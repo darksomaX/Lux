@@ -724,9 +724,11 @@ function buildSettingsUi(s) {
     row("Re-lock when tab closes", toggle("lockOnExit")) +
     "</div>" +
     "<div class=\"group\">" +
-    row("Clear tracking params", toggle("clearUrls")) +
+    row("Clear tracking params (ClearURLs)", toggle("clearUrls")) +
     row("Ad / element blocker", toggle("adBlock")) +
-    row("Site event handling", toggle("eventHandling")) +
+    // Note: "Site event handling" toggle removed — it can't be injected into
+    // cross-origin proxied frames. The ad-blocker + cosmetic CSS in the SW
+    // handles the practical cases.
     row("Google opt-out cookie", toggle("googleOptOut")) +
     row("Kill switch on network change", toggle("killSwitch")) +
     row("Show apparent IP", toggle("showIpBadge")) +

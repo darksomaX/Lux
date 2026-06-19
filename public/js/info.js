@@ -58,6 +58,8 @@ export function initInfoPanel() {
 
   // Start battery updates in the taskbar.
   initBatteryInTaskbar();
+  // Start volume polling to catch new media elements.
+  startVolumePoll();
 }
 
 // ── Volume ────────────────────────────────────────────────────────────────
@@ -70,15 +72,30 @@ export function setVolume(val) {
   // val: 0.0 – 1.0
   if (gainNode) gainNode.gain.value = Math.max(0, Math.min(1, val));
   saveSettings({ masterVolume: val });
-  // Best-effort: try to set volume on media elements in the active iframe.
+  // Apply to all media elements in all visible iframes (same-origin only).
+  // This uses the HTMLMediaElement.volume property directly — works for
+  // same-origin proxied frames (UV serves pages same-origin). Cross-origin
+  // frames can't be controlled; this is a browser limitation.
   try {
-    const activeFrame = document.querySelector(".lux-tab-frame[style*='block']") ||
-                        document.querySelector("iframe.lux-tab-frame:not([style*='none'])");
-    if (activeFrame && activeFrame.contentDocument) {
-      const media = activeFrame.contentDocument.querySelectorAll("audio, video");
-      for (const el of media) el.volume = val;
+    const frames = document.querySelectorAll("iframe.lux-tab-frame");
+    for (const frame of frames) {
+      if (frame.style.display === "none") continue;
+      const doc = frame.contentDocument;
+      if (!doc) continue;
+      const media = doc.querySelectorAll("audio, video");
+      for (const el of media) el.volume = Math.max(0, Math.min(1, val));
     }
   } catch {}
+}
+
+// Periodically apply saved volume to newly-loaded media elements (e.g. when
+// a video starts playing after page load). Runs every 3s while a frame is active.
+let volumePollTimer = null;
+export function startVolumePoll() {
+  if (volumePollTimer) clearInterval(volumePollTimer);
+  const saved = loadSettings().masterVolume;
+  if (typeof saved !== "number") return;
+  volumePollTimer = setInterval(() => setVolume(saved), 3000);
 }
 
 export function getVolume() {
