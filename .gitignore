@@ -8,6 +8,8 @@ public/epoxy/
 public/scramjet/
 public/libcurl/
 public/shims/
+public/controller/
+public/webretro/
 
 # test artifacts
 /tmp/lux-*.png

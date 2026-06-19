@@ -104,13 +104,22 @@ if (existsSync(uvSwPath)) {
       'const uvSW = new self.UVServiceWorker();\n' +
       'self.addEventListener("fetch", (event) => {\n' +
       '  const req = event.request;\n' +
-      '  // Ad-blocking: check if the destination hostname is a known ad host.\n' +
+      '  // Ad-blocking + ClearURLs param stripping.\n' +
       '  try {\n' +
       '    const url = new URL(req.url);\n' +
       '    const dest = req.destination;\n' +
+      '    // Drop ad-host sub-resource requests.\n' +
       '    if (dest !== "document" && dest !== "" && isAdHost(url.hostname)) {\n' +
       '      event.respondWith(new Response("", { status: 204 }));\n' +
       '      return;\n' +
+      '    }\n' +
+      '    // Strip tracking params from document navigations (ClearURLs).\n' +
+      '    if (dest === "document") {\n' +
+      '      const cleaned = cleanTrackingParams(req.url);\n' +
+      '      if (cleaned) {\n' +
+      '        event.respondWith(fetch(new Request(cleaned, req)));\n' +
+      '        return;\n' +
+      '      }\n' +
       '    }\n' +
       '  } catch {}\n' +
       '  if (uvSW.route({ request: req })) {\n' +

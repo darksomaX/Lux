@@ -78,12 +78,42 @@ function parseCookie(header, name) {
 // multi-domain deployments can see per-hostname load.
 // gzip all responses — uv.bundle alone drops from 379KB to 110KB on the wire.
 app.use(compression());
+// Count active users per session, not per request. A session is identified by
+// the lux_sid cookie (shared mode) or a temporary one set on first visit
+// (single mode). This prevents the counter from inflating by ~50 on every
+// page load (one increment per asset request).
+const countedSessions = new Set();
 app.use((req, res, next) => {
   const host = req.headers.host || "unknown";
-  userConnected(host);
-  res.on("close", () => userDisconnected(host));
+  // Only count page navigations (HTML), not assets.
+  const accept = req.headers.accept || "";
+  const isPageNav = accept.includes("text/html") && req.method === "GET";
+  if (isPageNav) {
+    let sid = parseCookie(req.headers.cookie || "", "lux_sid") ||
+              parseCookie(req.headers.cookie || "", "lux_guest");
+    if (!sid) {
+      sid = "g_" + Math.random().toString(36).slice(2, 10);
+      res.cookie("lux_guest", sid, { maxAge: 86400000, httpOnly: true, sameSite: "lax" });
+    }
+    const key = sid + "@" + host;
+    if (!countedSessions.has(key)) {
+      countedSessions.add(key);
+      userConnected(host);
+    }
+    res.on("close", () => {
+      // Delay disconnect so rapid navigations within a session don't flap.
+      setTimeout(() => {
+        if (countedSessions.has(key)) {
+          countedSessions.delete(key);
+          userDisconnected(host);
+        }
+      }, 5000);
+    });
+  }
   next();
 });
+
+// (parseCookie is defined above in the session-auth section — reuse it.)
 
 // Static mounts. Order matters: the SW scope root must be able to fetch these.
 // The bare-mux worker is fetched with strict same-origin expectations, so each
@@ -113,6 +143,9 @@ app.use("/controller", express.static(join(publicDir, "controller"), transportSt
 app.use("/clients", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/libcurl", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/cloak", express.static(join(publicDir, "cloak"), transportStaticOptions));
+// webretro emulator (static, ~95MB — cloned by the operator or build script).
+// Served with correct MIME for .wasm/.js cores.
+app.use("/webretro", express.static(join(publicDir, "webretro"), transportStaticOptions));
 app.use("/css", express.static(join(publicDir, "css"), transportStaticOptions));
 // TipTap and other npm packages for the rich text editor.
 const npmDir = join(root, "node_modules");

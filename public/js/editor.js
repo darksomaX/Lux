@@ -1,90 +1,172 @@
-// Document editor using TipTap rich text (CDN-loaded for ESM support).
-// Multiple documents stored in localStorage as HTML.
-// Formatting toolbar: bold, italic, headings, lists, links, images.
+// Document editor. Uses a plain contenteditable with document.execCommand
+// for formatting — zero dependencies, works offline. Covers the 80% of what
+// TipTap offered (bold/italic/headings/lists/links) without a CDN dependency.
+//
+// Multiple documents stored as HTML in localStorage.
 // Export to .html and .txt.
 
-const TIP = "https://esm.sh/@tiptap";
-
 let activeEditor = null;
+let activeDocId = null;
 
 export async function initEditor(containerEl, initialContent = "") {
-  const { Editor } = await import(TIP + "/core@2.11.7");
-  const { StarterKit } = await import(TIP + "/starter-kit@2.11.7");
-  const { Link } = await import(TIP + "/extension-link@2.11.7");
-  const { Image } = await import(TIP + "/extension-image@2.11.7");
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex;flex-direction:column;height:100%;position:relative;";
 
+  // Formatting toolbar.
   const toolbar = document.createElement("div");
-  toolbar.style.cssText = "display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap;background:var(--bg);";
+  toolbar.style.cssText =
+    "display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);" +
+    "flex-wrap:wrap;background:var(--bg);align-items:center;";
 
-  const mk = (label, action, isActive) => {
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.style.cssText = "padding:3px 8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);cursor:pointer;font-size:12px;font-family:var(--font);";
-    b.onclick = (e) => { e.preventDefault(); action(); };
-    return b;
+  const mk = (label, action, title) => {
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.title = title || label;
+    btn.style.cssText =
+      "padding:4px 8px;border:1px solid var(--line);border-radius:4px;" +
+      "background:var(--bg);color:var(--ink);cursor:pointer;font-size:13px;";
+    btn.onmousedown = (e) => e.preventDefault();
+    btn.onclick = () => { action(); surface.focus(); };
+    return btn;
   };
 
-  const bB = mk("B", () => activeEditor?.chain().focus().toggleBold().run(), () => activeEditor?.isActive("bold"));
-  bB.style.fontWeight = "700";
-  const bI = mk("I", () => activeEditor?.chain().focus().toggleItalic().run(), () => activeEditor?.isActive("italic"));
-  bI.style.fontStyle = "italic";
-  toolbar.append(bB, bI);
+  const surface = document.createElement("div");
+  surface.contentEditable = "true";
+  surface.spellcheck = false;
+  surface.style.cssText =
+    "flex:1;overflow:auto;padding:16px;font-size:16px;line-height:1.6;" +
+    "outline:none;color:var(--ink);font-family:var(--font);";
+  surface.innerHTML = initialContent || "<p><br></p>";
 
-  for (const h of ["P", "H1", "H2", "H3"]) {
-    const b = mk(h, () => {
-      if (h === "P") activeEditor?.chain().focus().setParagraph().run();
-      else activeEditor?.chain().focus().toggleHeading({ level: parseInt(h[1]) }).run();
-    }, () => false);
-    b.style.fontSize = h === "P" ? "12px" : (13 - parseInt(h[1]) * 1) + "px";
-    b.style.fontWeight = h === "P" ? "400" : "700";
-    toolbar.appendChild(b);
+  toolbar.appendChild(mk("B", () => document.execCommand("bold"), "Bold"));
+  toolbar.appendChild(mk("I", () => document.execCommand("italic"), "Italic"));
+  toolbar.appendChild(mk("H1", () => document.execCommand("formatBlock", false, "H1"), "Heading 1"));
+  toolbar.appendChild(mk("H2", () => document.execCommand("formatBlock", false, "H2"), "Heading 2"));
+  toolbar.appendChild(mk("P", () => document.execCommand("formatBlock", false, "P"), "Paragraph"));
+  toolbar.appendChild(mk("\u2022 List", () => document.execCommand("insertUnorderedList"), "Bullet list"));
+  toolbar.appendChild(mk("1. List", () => document.execCommand("insertOrderedList"), "Numbered list"));
+  toolbar.appendChild(mk("Link", () => {
+    const url = prompt("Enter URL:");
+    if (url) document.execCommand("createLink", false, url);
+  }, "Insert link"));
+
+  // Document selector + save/export.
+  const docSelect = document.createElement("select");
+  docSelect.style.cssText = "padding:4px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font-size:12px;margin-left:auto;";
+
+  const newDocBtn = mk("+ New", () => {
+    const id = "doc_" + Date.now();
+    const docs = getDocs();
+    docs[id] = { id, title: "New Document", html: "<p><br></p>", updated: Date.now() };
+    saveDocs(docs);
+    loadDocList(docSelect);
+    switchDoc(id, surface);
+  }, "New document");
+
+  const saveBtn = mk("Save", () => saveCurrent(surface), "Save");
+  const exportHtml = mk("Export HTML", () => {
+    const blob = new Blob([surface.innerHTML], { type: "text/html" });
+    downloadBlob(blob, "document.html");
+  }, "Export as HTML");
+  const exportTxt = mk("Export TXT", () => {
+    const blob = new Blob([surface.innerText], { type: "text/plain" });
+    downloadBlob(blob, "document.txt");
+  }, "Export as text");
+
+  function loadDocList(sel) {
+    const docs = getDocs();
+    let keys = Object.keys(docs).sort((a, b) => (docs[b].updated || 0) - (docs[a].updated || 0));
+    if (keys.length === 0) {
+      const id = "doc_" + Date.now();
+      docs[id] = { id, title: "Document", html: "<p><br></p>", updated: Date.now() };
+      saveDocs(docs);
+      keys = [id];
+    }
+    sel.innerHTML = "";
+    for (const k of keys) {
+      const opt = document.createElement("option");
+      opt.value = k;
+      opt.textContent = docs[k].title || "Untitled";
+      sel.appendChild(opt);
+    }
   }
 
-  toolbar.appendChild(mk("\u2022", () => activeEditor?.chain().focus().toggleBulletList().run(), () => false));
-  toolbar.appendChild(mk("1.", () => activeEditor?.chain().focus().toggleOrderedList().run(), () => false));
-  toolbar.appendChild(mk("\u{1F517}", () => { const u = prompt("URL:", "https://"); if (u) activeEditor?.chain().focus().setLink({ href: u }).run(); }, () => false));
-  toolbar.appendChild(mk("\u{1F5BC}", () => { const u = prompt("Image URL:"); if (u) activeEditor?.chain().focus().setImage({ src: u }).run(); }, () => false));
+  function switchDoc(id, surf) {
+    const docs = getDocs();
+    const doc = docs[id];
+    activeDocId = id;
+    surf.innerHTML = (doc && doc.html) || "<p><br></p>";
+    docSelect.value = id;
+  }
 
-  containerEl.innerHTML = "";
-  containerEl.appendChild(toolbar);
+  function saveCurrent(surf) {
+    if (!activeDocId) return;
+    const docs = getDocs();
+    docs[activeDocId] = { id: activeDocId, title: "Document", html: surf.innerHTML, updated: Date.now() };
+    saveDocs(docs);
+    showStatus("Saved", wrap);
+  }
 
-  const editorEl = document.createElement("div");
-  editorEl.style.cssText = "flex:1;overflow-y:auto;padding:12px;outline:none;";
-  containerEl.appendChild(editorEl);
+  docSelect.onchange = () => switchDoc(docSelect.value, surface);
+  loadDocList(docSelect);
 
-  const editor = new Editor({
-    element: editorEl,
-    extensions: [StarterKit.configure({ heading: { levels: [1, 2, 3] } }), Link.configure({ openOnClick: false }), Image],
-    content: initialContent || "<p>Start writing...</p>",
+  // Auto-save (debounced).
+  let saveTimer = null;
+  surface.addEventListener("input", () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveCurrent(surface), 2000);
   });
 
-  activeEditor = editor;
-  return editor;
+  toolbar.appendChild(docSelect);
+  toolbar.appendChild(newDocBtn);
+  toolbar.appendChild(saveBtn);
+  toolbar.appendChild(exportHtml);
+  toolbar.appendChild(exportTxt);
+
+  wrap.appendChild(toolbar);
+  wrap.appendChild(surface);
+  containerEl.innerHTML = "";
+  containerEl.appendChild(wrap);
+
+  // Load the most recent document.
+  const docs = getDocs();
+  const firstKey = Object.keys(docs).sort((a, b) => (docs[b].updated || 0) - (docs[a].updated || 0))[0];
+  if (firstKey) switchDoc(firstKey, surface);
+
+  activeEditor = { surface, activeDocId };
+  return activeEditor;
 }
 
-export function saveDocument(id, html) {
-  try { localStorage.setItem("lux.doc." + id, html); return true; } catch { return false; }
+function getDocs() {
+  try { return JSON.parse(localStorage.getItem("lux.docs") || "{}"); }
+  catch { return {}; }
 }
-
-export function loadDocument(id) {
-  try { return localStorage.getItem("lux.doc." + id) || "<p>Start writing...</p>"; } catch { return "<p>Start writing...</p>"; }
+function saveDocs(docs) {
+  localStorage.setItem("lux.docs", JSON.stringify(docs));
 }
-
-export function getActiveEditor() { return activeEditor; }
-
-export function exportAsHtml() {
-  if (!activeEditor) return;
-  download("document.html", activeEditor.getHTML(), "text/html");
-}
-
-export function exportAsText() {
-  if (!activeEditor) return;
-  download("document.txt", activeEditor.getText(), "text/plain");
-}
-
-function download(name, content, type) {
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([content], { type }));
-  a.download = name;
-  a.click();
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function showStatus(msg, wrap) {
+  let el = wrap.querySelector(".editor-status");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "editor-status";
+    el.style.cssText = "position:absolute;top:42px;right:12px;font-size:11px;color:var(--ink-soft);background:var(--bg);padding:2px 6px;border-radius:4px;opacity:0;transition:opacity 0.3s;pointer-events:none;";
+    wrap.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = "1";
+  setTimeout(() => { el.style.opacity = "0"; }, 1500);
+}
+
+// Compat exports for main.js.
+export function saveDocument(id, html) { saveDocs({ ...getDocs(), [id]: { id, html, updated: Date.now() } }); }
+export function loadDocument(id) { return (getDocs()[id] || {}).html || "<p><br></p>"; }
+export function getActiveEditor() { return activeEditor; }
+export function exportAsHtml() { if (activeEditor) downloadBlob(new Blob([activeEditor.surface.innerHTML], { type: "text/html" }), "document.html"); }
+export function exportAsText() { if (activeEditor) downloadBlob(new Blob([activeEditor.surface.innerText], { type: "text/plain" }), "document.txt"); }

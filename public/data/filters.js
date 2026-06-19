@@ -78,3 +78,26 @@ export function isAdHost(hostname) {
 export function cosmeticCss() {
   return COSMETIC_SELECTORS.join(",\n") + " { display: none !important; }\n";
 }
+
+// ClearURLs-style tracking params. Stripped from navigation/document requests
+// in the SW so the destination never sees them.
+const TRACKING_PARAMS = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+  "gclid", "gclsrc", "dclid", "fbclid", "msclkid", "yclid",
+  "mc_cid", "mc_eid", "mkt_tok", "_hsenc", "_hsmi", "hsCtaTracking",
+  "igshid", "ref_src", "ref_url", "feature", "sr_share",
+  "spm", "scm", "pvid", "algo_pvid",
+];
+
+export function cleanTrackingParams(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    let changed = false;
+    for (const p of TRACKING_PARAMS) {
+      if (u.searchParams.has(p)) { u.searchParams.delete(p); changed = true; }
+    }
+    return changed ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
