@@ -127,4 +127,48 @@
 | `public/js/tabManager.js` | Replaced by simpler single-tab toolbar approach |
 
 ### Files Unchanged
-`engine.js`, `transport.js`, `url-scheme.js`, `cloak.js`, `vault.js`, `kill-switch.js`, `iframe-watch.js`, `true-title.js`, `smart-iframe.js`, `extensions.js`, `games.js`, `search-engines.js`, `session.js`, `usb-killswitch.js`, `popup-perm.js`, `scripts/build-uv.mjs`, `server/config.js`, `server/sessions.js`, `server/stats.js`
+`transport.js`, `url-scheme.js`, `cloak.js`, `vault.js`, `kill-switch.js`, `iframe-watch.js`, `true-title.js`, `smart-iframe.js`, `extensions.js`, `games.js`, `search-engines.js`, `session.js`, `usb-killswitch.js`, `popup-perm.js`, `server/config.js`, `server/sessions.js`, `server/stats.js`
+
+## Phase 2b: Scramjet v2 Integration
+
+**Status**: Wired and ready for real-browser testing. UV proxy still verified working.
+
+### Changes
+- `npm install @mercuryworkshop/scramjet-controller` (v2 package, replaces v1 `@mercuryworkshop/scramjet`)
+- `scripts/build-uv.mjs`: Now copies v2 bundles (`controller.api.js`, `controller.inject.js`, `controller.sw.js` → `sw.js`) to `public/scramjet/`
+- `public/js/engine.js`: Replaced v1 scramjet object with v2 implementation using `globalThis.$scramjetController.Controller`. Uses `Controller` with `/scramjet/` prefix, lazy-loads `controller.api.js` IIFE bundle.
+- `public/js/tab-nav.js`: Added `mountTab()` function — Scramjet v2 manages its own frame via `controller.createFrame()`, so `mountTab()` handles the Scramjet case while UV uses the standard iframe.src approach.
+- `public/js/tabs.js`: `navigateTab()` now calls `mountTab()` first — if the engine handles mounting, it skips setting `iframe.src`.
+- `engine.js`: `scramjet.available` set to `true`, label changed to "Scramjet v2"
+
+### Usage
+Settings → Engine → Select "Scramjet v2" to test. Switches from UV to Scramjet at runtime.
+
+## Phase 4: Polish Tasks
+
+### 4a. Info Panel (`public/js/info.js`, new)
+- Replaces the "?" help icon in the taskbar with an info icon (ⓘ)
+- On hover/click, shows a card above the button with:
+  - Apparent IP (fetched from `/ip` endpoint)
+  - Screen dimensions + color depth
+  - Current time
+  - Battery level (via `navigator.getBattery()`, Chromium only)
+- Integrated into `main.js` via `initInfoPanel()` in `boot()`
+
+### 4b. Night Sky Galaxy Spin
+- Stars canvas (`initBackground`) now applies slow rotational drift to the star field (`galaxyAngle += 0.0008` per frame)
+- Stars have `dx/dy` coordinates (distance from center) that are rotated each frame using cos/sin transforms
+- Star array persists across settings changes — only regenerated on page reload
+- On resize, star positions update proportionally via the center-relative coordinates
+
+### 4d. Lux Title Animation
+- `luxFadeIn` keyframes: fade in from below (translateY: 30px → 0, opacity: 0 → 1)
+- `luxFloat` keyframes: gentle 6px vertical oscillation (3s, infinite)
+- Applied via `addLuxFloat()` which adds `lux-float` class to the title element
+- Verified: animation runs on page load
+
+### Not Implemented (Scope)
+- **Task 2c: DevTools Request Viewer** — Requires SW postMessage channel + devtools overlay panel
+- **Task 3a: Desktop Shell / Window Manager** — Full window system (`wm.js`) with draggable, resizable windows
+- **Task 3b: Word Editor** — TipTap rich text integration with document management
+- **Task 4c: Master Volume** — AudioContext gain node + volume slider in taskbar

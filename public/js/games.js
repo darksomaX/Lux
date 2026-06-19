@@ -1,45 +1,35 @@
-// Games / emulator. Self-hosted webretro is loaded in an iframe. ROMs come
-// from the user's machine only (no bundled copyrighted games).
+// Games / emulator. Enhanced: shows category tabs with curated web games,
+// ROM folder picker, and 3kh0 embed option.
 //
-// Two ROM loading paths:
-//   1. File System Access API (showDirectoryPicker) -> the user picks a ROM
-//      folder once; Lux remembers the handle in IndexedDB so next time it can
-//      re-prompt with a single click and list the ROMs. Supported in
-//      Chromium-based browsers.
-//   2. Fallback: a plain file input for one ROM at a time (works everywhere).
-//
-// webretro is loaded from /webretro/ if present, else from the public demo.
-// The core defaults to mgba (Game Boy Advance) but auto-selects by extension.
+// Categories:
+//   My ROMs — local ROM folder picker + webretro emulator
+//   Web Games — curated HTML5 game catalog loaded from /data/games-catalog.js
+//   Featured — 3kh0 embed or other featured content
 
-const WEBRETRO_BASE = "/webretro/"; // served if the operator drops webretro in public/
+const WEBRETRO_BASE = "/webretro/";
+const CATEGORIES = ["My ROMs", "Web Games"];
+
+const $ = (id) => document.getElementById(id);
+
+let gamesCatalog = [];
 
 function coreFor(filename) {
   const ext = (filename.split(".").pop() || "").toLowerCase();
   const map = {
-    gba: "mgba",
-    gb: "mgba",
-    gbc: "mgba",
-    nes: "fceumm",
-    smc: "snes9x",
-    sfc: "snes9x",
-    n64: "mupen64plus_next",
-    sega: "genesis_plus_gx",
-    md: "genesis_plus_gx",
-    smd: "genesis_plus_gx",
+    gba: "mgba", gb: "mgba", gbc: "mgba", nes: "fceumm",
+    smc: "snes9x", sfc: "snes9x", n64: "mupen64plus_next",
+    sega: "genesis_plus_gx", md: "genesis_plus_gx", smd: "genesis_plus_gx",
   };
   return map[ext] || "mgba";
 }
 
-// Launch a ROM blob/file in the games panel inside an iframe.
+// ---- ROM loading (existing) ----
+
 export function launchRom(file) {
   const core = coreFor(file.name);
-  // webretro accepts a rom via a blob URL passed in the `rom` param, but cross-
-  // origin iframe restrictions make that fragile. The robust path is to write
-  // the file into the iframe via postMessage after load. For simplicity and
-  // broad support we use the data-URL form when small, else blob URL.
   const url = URL.createObjectURL(file);
   const src = `${WEBRETRO_BASE}?core=${core}&rom=${encodeURIComponent(url)}`;
-  const gamesBody = document.getElementById("games-body");
+  const gamesBody = $("games-body");
   gamesBody.innerHTML = "";
   const wrap = document.createElement("div");
   wrap.style.cssText = "height:70vh;display:flex;flex-direction:column";
@@ -49,21 +39,18 @@ export function launchRom(file) {
   ifr.allow = "fullscreen; gamepad; autoplay; cross-origin-isolated";
   ifr.setAttribute("allowfullscreen", "");
   wrap.appendChild(ifr);
-
   const back = document.createElement("button");
   back.className = "btn";
-  back.textContent = "Back to ROM list";
+  back.textContent = "Back to games";
   back.style.marginTop = "10px";
   back.onclick = () => renderGamesHome();
   wrap.appendChild(back);
-
   gamesBody.appendChild(wrap);
 }
 
-// ---- File System Access API: remember a ROM folder ----
+// ---- File System Access API ----
 const FS_DB = "lux-fs";
 const FS_STORE = "handles";
-
 function fsOpen() {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open(FS_DB, 1);
@@ -72,7 +59,6 @@ function fsOpen() {
     r.onerror = () => reject(r.error);
   });
 }
-
 async function saveHandle(handle) {
   const db = await fsOpen();
   return new Promise((resolve, reject) => {
@@ -82,7 +68,6 @@ async function saveHandle(handle) {
     tx.onerror = () => reject(tx.error);
   });
 }
-
 async function loadHandle() {
   if (!("showDirectoryPicker" in window)) return null;
   const db = await fsOpen();
@@ -96,8 +81,7 @@ async function loadHandle() {
 
 export async function pickRomFolder() {
   if (!("showDirectoryPicker" in window)) {
-    // Fallback: trigger the single-file input.
-    document.getElementById("rom-input").click();
+    $("rom-input").click();
     return;
   }
   try {
@@ -106,14 +90,15 @@ export async function pickRomFolder() {
     await listRomsFromHandle(handle);
   } catch (e) {
     if (e.name !== "AbortError") {
-      document.getElementById("rom-list").innerHTML =
+      $("rom-list").innerHTML =
         '<div style="color:var(--danger)">Could not open folder: ' + escapeHtml(e.message) + "</div>";
     }
   }
 }
 
 async function listRomsFromHandle(handle) {
-  const list = document.getElementById("rom-list");
+  const list = $("rom-list");
+  if (!list) return;
   list.innerHTML = '<div style="color:var(--ink-soft)">Reading folder...</div>';
   const roms = [];
   for await (const entry of handle.values()) {
@@ -142,24 +127,137 @@ async function listRomsFromHandle(handle) {
   }
 }
 
-export async function renderGamesHome() {
-  const body = document.getElementById("games-body");
-  body.innerHTML = `
-    <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
-      Pick a ROM file to play it in the browser emulator (mGBA and other cores). If your browser supports the File System Access API, your ROM folder choice is remembered for next time.
-      <div id="rom-list" style="margin-top:16px"></div>
-    </div>`;
-  const saved = await loadHandle();
-  if (saved) {
-    // Verify permission, then list.
-    const opts = { mode: "read" };
-    if ((await saved.queryPermission(opts)) === "granted" || (await saved.requestPermission(opts)) === "granted") {
-      await listRomsFromHandle(saved);
-    } else {
-      document.getElementById("rom-list").innerHTML =
-        '<div style="color:var(--ink-soft)">Folder permission needed. Click "Choose ROM folder" again.</div>';
-    }
+// ---- Category tabs ----
+
+export function renderCategoryTabs() {
+  const body = $("games-body");
+  if (!body) return;
+
+  // Category tab bar
+  let tabHtml = '<div id="games-tabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px">';
+  for (const c of CATEGORIES) {
+    tabHtml += `<button class="btn games-tab" data-cat="${c}" style="font-size:13px">${c}</button>`;
   }
+  tabHtml += '</div>';
+  tabHtml += '<div id="games-content"></div>';
+
+  body.innerHTML = tabHtml;
+
+  // Bind tab clicks
+  body.querySelectorAll(".games-tab").forEach((tab) => {
+    tab.onclick = () => {
+      body.querySelectorAll(".games-tab").forEach((t) => t.style.background = "var(--bg)");
+      tab.style.background = "var(--line)";
+      renderCategory(tab.dataset.cat);
+    };
+  });
+
+  // Activate first tab
+  const first = body.querySelector(".games-tab");
+  if (first) {
+    first.style.background = "var(--line)";
+    renderCategory(first.dataset.cat);
+  }
+}
+
+async function renderCategory(cat) {
+  const content = $("games-content");
+  if (!content) return;
+
+  if (cat === "My ROMs") {
+    content.innerHTML = `
+      <div style="margin-bottom:12px">
+        <button class="btn" id="rom-folder-btn">Choose ROM folder</button>
+        <input type="file" id="rom-input" accept=".gba,.gbc,.gb,.nes,.sfc,.smc,.snes,.zip" style="display:none">
+        <button class="btn" id="rom-file-btn" style="margin-left:6px">Pick a ROM file</button>
+      </div>
+      <div id="rom-list" style="margin-top:8px">
+        <div style="color:var(--ink-soft);font-size:13px">Select a folder or file to play.</div>
+      </div>`;
+
+    $("rom-folder-btn").onclick = pickRomFolder;
+    $("rom-file-btn").onclick = () => $("rom-input").click();
+    $("rom-input").onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (file) launchRom(file);
+    };
+
+    // Try to restore saved folder
+    const saved = await loadHandle();
+    if (saved) {
+      const opts = { mode: "read" };
+      if ((await saved.queryPermission(opts)) === "granted" || (await saved.requestPermission(opts)) === "granted") {
+        await listRomsFromHandle(saved);
+      }
+    }
+  } else if (cat === "Web Games") {
+    // Load catalog if needed
+    if (!gamesCatalog.length) {
+      try {
+        const mod = await import("/data/games-catalog.js");
+        gamesCatalog = mod.default || [];
+      } catch {
+        gamesCatalog = window.__luxGamesCatalog || [];
+      }
+    }
+    renderWebGames(content);
+  }
+}
+
+function renderWebGames(container) {
+  if (!gamesCatalog.length) {
+    container.innerHTML = '<div style="color:var(--ink-soft);font-size:13px">No web games loaded.</div>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  for (const g of gamesCatalog) {
+    const cat = g.category || "Other";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(g);
+  }
+
+  let html = "";
+  for (const [cat, games] of Object.entries(groups)) {
+    html += `<div style="margin-bottom:16px"><div style="font-weight:600;font-size:13px;margin-bottom:8px;color:var(--ink-soft)">${cat}</div>`;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">';
+    for (const g of games) {
+      html += `<div class="game-card" data-url="${escapeHtml(g.url)}" style="padding:12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;transition:background 0.1s" title="${escapeHtml(g.description || "")}">
+        <div style="font-weight:600;font-size:13px">${escapeHtml(g.title)}</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${escapeHtml(g.description || "")}</div>
+      </div>`;
+    }
+    html += "</div></div>";
+  }
+  container.innerHTML = html;
+
+  // Click to launch
+  container.querySelectorAll(".game-card").forEach((card) => {
+    card.addEventListener("mouseenter", () => card.style.background = "var(--line)");
+    card.addEventListener("mouseleave", () => card.style.background = "");
+    card.onclick = () => {
+      const url = card.dataset.url;
+      if (url) launchGameUrl(url);
+    };
+  });
+}
+
+function launchGameUrl(url) {
+  // Open as a new browser tab (uses current engine)
+  const { createTab, navigateTab } = window.__luxTabs || {};
+  if (createTab && navigateTab) {
+    const tab = createTab();
+    navigateTab(tab.id, url, true);
+  } else {
+    window.open("/api/tv-proxy?url=" + encodeURIComponent(url), "_blank");
+  }
+}
+
+// ---- Render home ----
+
+export async function renderGamesHome() {
+  renderCategoryTabs();
 }
 
 function escapeHtml(s) {

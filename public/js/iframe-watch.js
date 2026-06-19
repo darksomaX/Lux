@@ -36,6 +36,8 @@ function scan(containerEl) {
       // Only surface if it looks like a real content frame (has dimensions).
       const rect = f.getBoundingClientRect();
       if (rect.width < 50 || rect.height < 50) continue;
+      // Skip Scramjet-managed and proxy frames.
+      if (src.includes("/~/sj/") || src.includes("/scramjet/") || src.includes("/sj-proxy?")) continue;
       if (onNestedCallback) onNestedCallback(src);
     }
   } catch {

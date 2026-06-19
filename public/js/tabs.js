@@ -83,6 +83,8 @@ export function activateTab(id) {
 }
 
 export function closeTab(id) {
+  // Prevent closing the last tab.
+  if (tabs.length <= 1) return;
   const idx = tabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
   const tab = tabs[idx];
@@ -92,7 +94,6 @@ export function closeTab(id) {
   emit("tabClosed", tab);
 
   if (tabs.length === 0) {
-    // Always keep at least a new-tab open (like a browser).
     createTab();
     return;
   }
@@ -114,6 +115,16 @@ export function getAllTabs() {
   return [...tabs];
 }
 
+// Reorder a tab from one index to another (for drag-and-drop).
+export function reorderTabs(fromId, toId) {
+  const fromIdx = tabs.findIndex(t => t.id === fromId);
+  const toIdx = tabs.findIndex(t => t.id === toId);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [moved] = tabs.splice(fromIdx, 1);
+  tabs.splice(toIdx, 0, moved);
+  emit("tabUpdated", moved);
+}
+
 // Navigate a tab to a real (decoded) URL. Sets up the proxy, encodes, loads.
 export async function navigateTab(id, url, recordHistory = true) {
   const tab = getTab(id);
@@ -124,12 +135,15 @@ export async function navigateTab(id, url, recordHistory = true) {
 
   try {
     // The engine + transport setup is shared (one SW, one wisp connection).
-    // We just set the iframe src to the encoded proxied path.
-    const { setTransportFor, getEngine, buildProxyPath, encodeForTab } = await import("./tab-nav.js");
+    // Some engines (Scramjet v2) manage their own frame via mountTab.
+    const { setTransportFor, getEngine, buildProxyPath, encodeForTab, mountTab } = await import("./tab-nav.js");
     await setTransportFor(getEngine().name);
     await getEngine().init();
-    const path = encodeForTab(url);
-    tab.iframe.src = path;
+    const mounted = await mountTab(tab, url);
+    if (!mounted) {
+      const path = encodeForTab(url);
+      tab.iframe.src = path;
+    }
 
     if (recordHistory) {
       if (tab.historyIdx < tab.history.length - 1) {

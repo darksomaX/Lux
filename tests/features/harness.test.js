@@ -52,6 +52,7 @@ function bootServer() {
     app.use("/libcurl", express.static(join(publicDir, "libcurl"), opts));
     app.use("/cloak", express.static(join(publicDir, "cloak")));
     app.use("/css", express.static(join(publicDir, "css"), opts));
+    app.use("/npm", express.static(join(root, "node_modules"), opts));
     app.use("/js", express.static(join(publicDir, "js"), opts));
     app.use("/assets", express.static(join(publicDir, "assets")));
     app.get("/uv.sw.js", (req, res) => { res.set("Service-Worker-Allowed", "/"); res.sendFile(join(publicDir, "uv/uv.sw.js")); });
@@ -185,7 +186,7 @@ async function main() {
   const html = idx.body;
   const uiChecks = [
     ["Lux title", /id="title">Lux</],
-    ["search input", /id="search-input"/],
+    ["toolbar URL input (search)", /id="toolbar-url"/],
     ["incognito button", /id="incognito-btn"/],
     ["gear/settings button", /id="open-settings"/],
     ["docs button", /id="open-docs"/],
@@ -199,13 +200,14 @@ async function main() {
     ["nav forward button", /id="nav-forward"/],
     ["nav stop button", /id="nav-stop"/],
     ["nav reload button", /id="nav-reload"/],
-    ["nav info button", /id="nav-info"/],
     ["nav close button", /id="nav-close"/],
     ["browser app default-active", /taskbar-app active.*data-app="browser"/],
     ["lock screen", /id="lockscreen"/],
     ["vault panel", /id="panel-vault"/],
     ["emulator panel", /id="panel-games"/],
     ["kill switch banner", /id="killbanner"/],
+    ["tab strip", /id="tab-strip"/],
+    ["new tab page", /id="new-tab-page"/],
   ];
   for (const [name, re] of uiChecks) {
     ok("HTML has: " + name, re.test(html));

@@ -1,0 +1,21 @@
+# ui
+- Applications/panels (notes, vault, games, settings) should load above the bottom taskbar, never covering it. The taskbar must always remain accessible. Confidence: 0.70
+- Browser chrome tab bar includes back, forward, stop, reload, search bar, info button, plus/new-tab, and close buttons — not just a minimal tab strip. Confidence: 0.65
+- Lux title text should have a fade-in-from-bottom entrance animation with a subtle floating/hovering effect. Confidence: 0.60
+- Browser tabs should have top border-radius so they visually connect to the page below with rounded corners. The new-tab plus button should be pill-shaped (fully rounded). Confidence: 0.70
+- New-tab page should show both the Lux logo/title and a centered search bar (omnibox), not just the logo alone. Confidence: 0.70
+- Browser tabs must be draggable for reordering. Confidence: 0.70
+- Double-clicking a window title bar should toggle maximize/restore. Confidence: 0.70
+- Window snapping should be supported when dragging windows near edges or other windows. Confidence: 0.70
+- A tab must be present on initial page load, not an empty tab strip waiting for user action. Confidence: 0.70
+- New tabs should default to the Lux new-tab page showing the logo and search bar. Confidence: 0.70
+- The reload button and stop button should be conditionally shown — only visible when a website is actively loading/refreshing. Confidence: 0.70
+- The back and forward navigation buttons should only appear when there is navigation history to go back or forward to. Confidence: 0.70
+- There is a dark-mode flash on initial page load: the page briefly renders in dark mode (dark bar, logo visible) before switching to light mode, causing the Lux logo and centered search bar to disappear. This is likely caused by theme CSS being applied after initial render — persist theme preference in localStorage and apply it before first paint (e.g., via a blocking script in <head> or by reading theme from localStorage before DOMContentLoaded). Confidence: 0.75
+- When a user navigates to an invalid/broken URL, the proxy infinitely loops, re-proxying the broken URL every few seconds. A clean 404 page should be shown instead with a simple "404 Page Not Found — please contact the owner" message. Confidence: 0.75
+- The browser reload/refresh button icon looks visually off/misaligned — use standard icon set (Lucide, Material Icons, or similar) with consistent sizing and alignment across all toolbar buttons. Confidence: 0.70
+- Windows must be draggable by their title bar. Currently window dragging does not work. The window manager (`wm.js`) needs to support pointer events on the title bar for repositioning. Confidence: 0.80
+- The browser should render as a windowed application (with title bar, minimize/maximize/close buttons), not just an embedded iframe in the page. Confidence: 0.75
+- The bottom taskbar with app icons (Browser, Notes, Vault, Games) should be replaced with a top bar similar to Tinf0il's design. All functionality previously in separate panels should be accessible from the top bar. Confidence: 0.70
+- Tabs should be closable only when more than one tab exists — a single remaining tab should not show a close button. Confidence: 0.70
+- The reference project Aluminum-Depot/Tinf0il demonstrates a different tab paradigm: home page with no tabs → typing a URL/search opens it in a new tab → tabbed mode continues until user clicks Home to reset. This is preferred over always-visible tabs. Confidence: 0.65

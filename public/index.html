@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light">
 <title>Lux</title>
 <link rel="preload" href="/assets/lora-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/lora-700-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -27,48 +27,54 @@
 
   <!-- ========== APP ========== -->
   <div id="app">
-    <!-- Home Screen -->
-    <div id="home">
-      <h1 id="title">Lux</h1>
-      <div class="search-row">
-        <input id="search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search or enter URL">
-        <button class="home-btn incognito" id="incognito-btn" aria-label="Incognito">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/><circle cx="12" cy="11" r="2.5"/></svg>
-        </button>
-        <button class="home-btn" id="search-btn" aria-label="Search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </button>
+    <!-- Browser as a draggable/minimizable window -->
+    <div id="browser-window">
+      <!-- Browser title bar (macOS chrome + drag handle) -->
+      <div id="browser-chrome">
+        <div class="wc-group">
+          <button class="wc-dot wc-c-dot" id="browser-minimize" title="Minimize" aria-label="Minimize browser"></button>
+          <button class="wc-dot wc-y-dot" id="browser-maximize" title="Maximize" aria-label="Maximize browser"></button>
+          <button class="wc-dot wc-g-dot" id="browser-close" title="Close" aria-label="Close browser"></button>
+        </div>
+        <span id="browser-title">Browser</span>
       </div>
-      <div id="status"></div>
+
+      <!-- Tab strip at the top -->
+      <div id="tab-strip"></div>
+
+      <!-- Browser toolbar -->
+      <div id="browser-toolbar">
+      <button class="toolbar-btn" id="nav-back" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="toolbar-btn" id="nav-forward" aria-label="Forward">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="toolbar-btn" id="nav-reload" aria-label="Reload" title="Reload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <button class="toolbar-btn" id="nav-stop" aria-label="Stop" title="Stop" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+      <div id="toolbar-url-wrap">
+        <input id="toolbar-url" type="text" autocomplete="off" spellcheck="false" placeholder="Search or enter URL">
+        <button class="toolbar-info" id="incognito-btn" aria-label="Incognito" title="Incognito">&#128737;</button>
+      </div>
+      <button class="toolbar-btn" id="nav-new" aria-label="New tab">+</button>
+      <button class="toolbar-btn" id="nav-close" aria-label="Close">&#10005;</button>
     </div>
 
-    <!-- Browser Area (tab strip + toolbar + viewport) -->
-    <div id="browser-area">
-      <div id="tab-strip"></div>
-      <div id="browser-toolbar">
-        <button class="toolbar-btn" id="nav-back" aria-label="Back">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <button class="toolbar-btn" id="nav-forward" aria-label="Forward">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
-        <button class="toolbar-btn" id="nav-stop" aria-label="Stop">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-        </button>
-        <button class="toolbar-btn" id="nav-reload" aria-label="Reload">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12a11 11 0 0 1 21-6.5M23 12a11 11 0 0 1-21 6.5"/><path d="M23 3v6h-6M1 21v-6h6"/></svg>
-        </button>
-        <div id="toolbar-url-wrap">
-          <input id="toolbar-url" type="text" autocomplete="off" spellcheck="false" placeholder="Enter URL or search">
-          <button class="toolbar-info" id="nav-info" aria-label="Page info">&#128274;</button>
-        </div>
-        <button class="toolbar-btn" id="nav-new" aria-label="New tab">+</button>
-        <button class="toolbar-btn" id="nav-close" aria-label="Close">&#10005;</button>
+    <!-- Viewport: iframes + new-tab page -->
+    <div id="tab-viewport">
+      <!-- New-tab page (shown when no active tab) -->
+      <div id="new-tab-page">
+        <h1 id="title">Lux</h1>
+        <input id="nt-url" type="text" autocomplete="off" spellcheck="false" placeholder="Search or enter URL">
+        <div id="status"></div>
       </div>
-      <div id="tab-viewport">
-        <!-- Tab iframes are created dynamically by tabs.js -->
-      </div>
+      <!-- Tab iframes are created dynamically by tabs.js -->
     </div>
+    </div> <!-- /browser-window -->
 
     <!-- Taskbar (Windows style) -->
     <div id="taskbar">
@@ -88,6 +94,14 @@
         <button class="taskbar-app" data-app="games">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/></svg>
           Games
+        </button>
+        <button class="taskbar-app" data-app="tv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 3l4 4 4-4"/></svg>
+          Live
+        </button>
+        <button class="taskbar-app" data-app="chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="15" height="15"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat
         </button>
       </div>
       <div id="taskbar-center"><span class="task-label"></span></div>
@@ -144,6 +158,38 @@
       <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
         Pick a ROM file to play it in the browser emulator.
         <div id="rom-list" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel-full" id="panel-tv">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-tv" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-tv" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-tv" aria-label="Close"></button></div><h2>Live TV</h2></div>
+    <div class="body" id="tv-body">
+      <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
+        <div id="tv-home">
+          <div style="margin-bottom:16px">
+            <input id="tv-url" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a streaming site URL" style="width:100%;max-width:400px;height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;outline:none;text-align:center">
+            <button class="btn" id="tv-load" style="margin-left:8px">Load</button>
+          </div>
+          <div style="margin-bottom:12px;font-weight:600">Quick picks</div>
+          <div id="tv-quick-picks" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+        <div id="tv-player" style="display:none;flex-direction:column;gap:12px;height:100%">
+          <iframe id="tv-frame" style="flex:1;width:100%;border:1px solid var(--line);border-radius:10px;background:#000" allow="fullscreen; autoplay"></iframe>
+          <button class="btn" id="tv-back">Back</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel-full" id="panel-chat">
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-chat" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-chat" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-chat" aria-label="Close"></button></div><h2>Chat</h2></div>
+    <div class="body" id="chat-body" style="display:flex;flex-direction:column;padding:0">
+      <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+      <div id="chat-input-area" style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--line)">
+        <input id="chat-name" type="text" autocomplete="off" placeholder="Name" style="width:100px;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;outline:none">
+        <input id="chat-input" type="text" autocomplete="off" placeholder="Type a message..." style="flex:1;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;outline:none">
+        <button class="btn" id="chat-send">Send</button>
       </div>
     </div>
   </section>

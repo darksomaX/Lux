@@ -15,13 +15,23 @@ export function encodeForTab(url) {
   const schemePath = buildProxyPath(url);
 
   if (schemePath === "engine") {
-    // Use the engine's own encoder (UV xor by default).
     return eng.encode(url);
   }
   if (schemePath === null) {
-    // "none" scheme: return the raw URL (the SW still rewrites it).
     return url;
   }
-  // Custom scheme path (e.g. /s/<encoded>).
   return schemePath;
+}
+
+// Mount a tab for engines that manage their own frame (like Scramjet).
+// Returns true if the engine handled mounting, false if the caller should
+// set iframe.src themselves.
+export async function mountTab(tab, url) {
+  const eng = getEngine();
+  if (eng.name === "scramjet") {
+    // Scramjet v2: register SW and set iframe.src (same pattern as UV).
+    await eng.mount(url, tab.iframe);
+    return true;
+  }
+  return false;
 }

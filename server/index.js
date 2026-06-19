@@ -109,6 +109,16 @@ app.use("/scramjet", express.static(join(publicDir, "scramjet"), transportStatic
 app.use("/libcurl", express.static(join(publicDir, "libcurl"), transportStaticOptions));
 app.use("/cloak", express.static(join(publicDir, "cloak"), transportStaticOptions));
 app.use("/css", express.static(join(publicDir, "css"), transportStaticOptions));
+// TipTap and other npm packages for the rich text editor.
+const npmDir = join(root, "node_modules");
+app.use("/npm", express.static(npmDir, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".mjs") || filePath.endsWith(".js")) res.type("text/javascript");
+    else if (filePath.endsWith(".wasm")) res.type("application/wasm");
+    else if (filePath.endsWith(".css")) res.type("text/css");
+  },
+  fallthrough: false,
+}));
 app.use("/js", express.static(join(publicDir, "js"), transportStaticOptions));
 app.use("/data", express.static(join(publicDir, "data"), transportStaticOptions));
 app.use("/assets", express.static(join(publicDir, "assets"), { fallthrough: false }));
@@ -125,10 +135,120 @@ app.get("/uv.sw.js", (req, res) => {
 });
 app.get("/sj.sw.js", (req, res) => {
   res.set("Service-Worker-Allowed", "/");
-  res.sendFile(join(publicDir, "scramjet/sw.js"));
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  // Serve the controller SW (with RPC support) instead of the pass-through
+  res.sendFile(join(publicDir, "scramjet/controller.sw.js"));
 });
 
 app.use(express.static(publicDir));
+
+// Clean 404 page for invalid URLs.
+const PAGE_NOT_FOUND = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>404 — Lux</title>
+<style>
+body{margin:0;height:100dvh;display:flex;align-items:center;justify-content:center;
+  font-family:system-ui,-apple-system,sans-serif;background:#faf9f6;color:#1a1a1a}
+.wrap{text-align:center;max-width:420px;padding:24px}
+h1{font-size:64px;margin:0 0 8px;font-weight:300;letter-spacing:-2px}
+p{font-size:15px;line-height:1.6;color:#666;margin:0 0 16px}
+.detail{font-size:12px;color:#999;word-break:break-all;padding:8px;
+  background:#f0efec;border-radius:6px;margin:12px 0}
+a{color:#1a1a1a;text-decoration:underline}
+a:hover{color:#666}</style></head><body><div class="wrap">
+<h1>404</h1>
+<p>The page you requested could not be loaded.<br>
+If you believe this is an error, please contact the site owner.</p>
+<a href="/">Return to Lux</a>
+</div></body></html>`;
+
+// Scramjet proxy endpoint: fetches a URL on the server side and returns
+// the response. The iframe is pointed directly at this endpoint, so the
+// HTML is rendered with a <base> tag to fix relative URL resolution.
+app.get("/sj-proxy", async (req, res) => {
+  const target = req.query.url;
+  if (!target || typeof target !== "string") {
+    return res.status(400).type("html").send(PAGE_NOT_FOUND);
+  }
+  if (!target.startsWith("http://") && !target.startsWith("https://")) {
+    return res.status(400).type("html").send(PAGE_NOT_FOUND);
+  }
+  try {
+    const resp = await fetch(target, {
+      headers: { "User-Agent": req.headers["user-agent"] || "" },
+      redirect: "follow",
+    });
+    res.status(resp.status);
+    for (const [k, v] of resp.headers) {
+      const lk = k.toLowerCase();
+      if (["transfer-encoding", "connection", "keep-alive", "content-security-policy",
+           "content-encoding", "content-length"].includes(lk)) continue;
+      res.setHeader(k, v);
+    }
+    const ct = resp.headers.get("content-type") || "";
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (ct.includes("text/html")) {
+      let html = buf.toString("utf8");
+      html = html.replace("<head>", `<head><base href="${target}">`);
+      res.setHeader("content-length", Buffer.byteLength(html));
+      return res.send(html);
+    }
+    res.send(buf);
+  } catch (e) {
+    // Return clean 404 page with error detail for debugging
+    const withError = PAGE_NOT_FOUND.replace(
+      "</p>",
+      `</p><div class="detail">${e.message.replace(/</g,"&lt;")}</div>`
+    );
+    res.status(502).type("html").send(withError);
+  }
+});
+
+// TV proxy endpoint: mirrors /sj-proxy pattern. Fetches a URL on the server
+// side, strips dangerous headers, injects <base> tag, returns the response.
+// Supports header mapping: x-cookie -> cookie, x-referer -> referer.
+app.get("/api/tv-proxy", async (req, res) => {
+  const target = req.query.url;
+  if (!target || typeof target !== "string") {
+    return res.status(400).type("html").send(PAGE_NOT_FOUND);
+  }
+  if (!target.startsWith("http://") && !target.startsWith("https://")) {
+    return res.status(400).type("html").send(PAGE_NOT_FOUND);
+  }
+  try {
+    const fetchHeaders = { "User-Agent": req.headers["user-agent"] || "" };
+    // Map x-* headers to their real equivalents
+    if (req.headers["x-cookie"]) fetchHeaders.cookie = req.headers["x-cookie"];
+    if (req.headers["x-referer"]) fetchHeaders.referer = req.headers["x-referer"];
+
+    const resp = await fetch(target, {
+      headers: fetchHeaders,
+      redirect: "follow",
+    });
+    res.status(resp.status);
+    for (const [k, v] of resp.headers) {
+      const lk = k.toLowerCase();
+      if (["transfer-encoding", "connection", "keep-alive", "content-security-policy",
+           "content-encoding", "content-length"].includes(lk)) continue;
+      res.setHeader(k, v);
+    }
+    const ct = resp.headers.get("content-type") || "";
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (ct.includes("text/html")) {
+      let html = buf.toString("utf8");
+      html = html.replace("<head>", `<head><base href="${target}">`);
+      res.setHeader("content-length", Buffer.byteLength(html));
+      return res.send(html);
+    }
+    res.send(buf);
+  } catch (e) {
+    const withError = PAGE_NOT_FOUND.replace(
+      "</p>",
+      `</p><div class="detail">${e.message.replace(/</g,"&lt;")}</div>`
+    );
+    res.status(502).type("html").send(withError);
+  }
+});
 
 // Stats endpoints (Phase 3 status page consumes these; harmless now).
 app.get("/stats/json", statsJson);
@@ -173,6 +293,131 @@ app.get("/ip", (req, res) => {
   res.set("Cache-Control", "no-store").json({ ip });
 });
 
+// ---- Chat WebSocket ----
+// Simple in-memory chat. Minimal WebSocket implementation using Node's
+// built-in crypto for the handshake, and raw TCP frames for messaging.
+import crypto from "node:crypto";
+
+const CHAT_HISTORY = [];
+const CHAT_MAX = 100;
+const chatClients = new Set();
+
+function broadcast(msg) {
+  const payload = JSON.stringify(msg);
+  for (const send of chatClients) {
+    try { send(payload); } catch { chatClients.delete(send); }
+  }
+}
+
+function handleChat(req, socket) {
+  if (req.headers["upgrade"]?.toLowerCase() !== "websocket") {
+    return socket.end();
+  }
+
+  const key = req.headers["sec-websocket-key"];
+  const accept = crypto.createHash("sha1")
+    .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64");
+
+  socket.write(
+    "HTTP/1.1 101 Switching Protocols\r\n" +
+    "Upgrade: websocket\r\n" +
+    "Connection: Upgrade\r\n" +
+    "Sec-WebSocket-Accept: " + accept + "\r\n\r\n"
+  );
+
+  let buffer = Buffer.alloc(0);
+
+  function sendWS(data) {
+    const payload = Buffer.from(data, "utf8");
+    const len = payload.length;
+    let frame;
+    if (len < 126) {
+      frame = Buffer.alloc(2 + len);
+      frame[0] = 0x81;
+      frame[1] = len;
+      payload.copy(frame, 2);
+    } else if (len < 65536) {
+      frame = Buffer.alloc(4 + len);
+      frame[0] = 0x81;
+      frame[1] = 126;
+      frame.writeUInt16BE(len, 2);
+      payload.copy(frame, 4);
+    } else {
+      frame = Buffer.alloc(10 + len);
+      frame[0] = 0x81;
+      frame[1] = 127;
+      frame.writeBigUInt64BE(BigInt(len), 2);
+      payload.copy(frame, 10);
+    }
+    socket.write(frame);
+  }
+
+  chatClients.add(sendWS);
+  if (CHAT_HISTORY.length) {
+    sendWS(JSON.stringify({ type: "history", messages: CHAT_HISTORY }));
+  }
+  broadcast({ type: "system", text: "A user joined the chat." });
+
+  socket.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    while (buffer.length >= 2) {
+      const opcode = buffer[0] & 0x0f;
+      const masked = buffer[1] & 0x80;
+      let payloadLen = buffer[1] & 0x7f;
+      let offset = 2;
+
+      if (payloadLen === 126) {
+        if (buffer.length < 4) return;
+        payloadLen = buffer.readUInt16BE(2);
+        offset = 4;
+      } else if (payloadLen === 127) {
+        if (buffer.length < 10) return;
+        payloadLen = Number(buffer.readBigUInt64BE(2));
+        offset = 10;
+      }
+
+      let maskKey = null;
+      if (masked) {
+        if (buffer.length < offset + 4) return;
+        maskKey = buffer.slice(offset, offset + 4);
+        offset += 4;
+      }
+
+      if (buffer.length < offset + payloadLen) return;
+      let payload = Buffer.from(buffer.slice(offset, offset + payloadLen));
+      if (maskKey) {
+        for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i % 4];
+      }
+      buffer = buffer.slice(offset + payloadLen);
+
+      if (opcode === 0x08) {
+        chatClients.delete(sendWS);
+        broadcast({ type: "system", text: "A user left the chat." });
+        return;
+      }
+      if (opcode === 0x01) {
+        const raw = payload.toString("utf8");
+        let name = "Anonymous", text = raw;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.text) text = parsed.text;
+          if (parsed.name) name = parsed.name;
+        } catch {}
+        const msg = { type: "message", name, text, time: Date.now() };
+        CHAT_HISTORY.push(msg);
+        if (CHAT_HISTORY.length > CHAT_MAX) CHAT_HISTORY.shift();
+        broadcast(msg);
+      }
+    }
+  });
+
+  socket.on("close", () => {
+    chatClients.delete(sendWS);
+    broadcast({ type: "system", text: "A user left the chat." });
+  });
+}
+
 // Create the HTTP server and attach wisp to the upgrade event. UV's service
 // worker connects to /wisp/ over WebSocket; wisp.routeRequest multiplexes
 // each connection into per-stream TCP/UDP tunnels to the real destinations.
@@ -180,6 +425,8 @@ const httpServer = createServer(app);
 httpServer.on("upgrade", (req, socket, head) => {
   if (req.url.startsWith("/wisp/")) {
     wisp.routeRequest(req, socket, head);
+  } else if (req.url === "/chat/") {
+    handleChat(req, socket);
   } else {
     socket.end();
   }

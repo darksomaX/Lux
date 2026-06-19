@@ -62,6 +62,12 @@ export const DEFAULTS = {
   // Taskbar.
   taskbarHide: false,        // auto-hide taskbar on hover
 
+  // Volume.
+  masterVolume: 1.0,         // 0.0 – 1.0
+
+  // DevTools.
+  devtools: false,           // proxied request viewer
+
   // Cloak.
   antiClose: false,
 };

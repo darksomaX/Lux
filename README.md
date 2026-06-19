@@ -63,9 +63,27 @@ There is a longer explanation at `/how-it-works.html` once Lux is running. The s
 
 Logins work because all traffic is same-origin to your domain, so cookie and OAuth redirect flows resolve. The transports handle the TLS handshake that a bare relay cannot.
 
-## Features
+## Features (v0.4)
 
-**Engines.** Choose Ultraviolet (the default, well documented) or Scramjet (the newer successor). Both use the same wisp backend. The switch is a setting, not a reinstall.
+**Engines.** Choose Ultraviolet (default, well documented) or Scramjet v2 (newer, more thorough interception). Both use the same wisp + Epoxy backend. Switch engines at any time in Settings.
+
+**Browser toolbar.** Back, forward, stop, reload, URL bar, info button, new/close tabs. The URL bar shows the proxied destination. Double-tap Control to flash the real URL.
+
+**Tab strip.** Each navigation creates a tab in the strip. Tabs show the page title and favicon. Close tabs via the × button or middle-click. Orphan detection: if Lux is loaded at a bare proxied URL (e.g. a shared link), a toast offers to return home.
+
+**Window manager.** Notes, Vault, and Games open as draggable, resizable windows with macOS traffic-light buttons (close/minimize/maximize). Click a taskbar app to focus or restore its window. Windows can be dragged by the title bar and resized from the bottom-right corner.
+
+**Rich text editor.** The Notes app uses TipTap, a ProseMirror-based rich text editor. Format with bold, italic, headings (H1–H3), bullet and numbered lists, links, and images. Multiple documents are stored in the browser. Export to .html or .txt.
+
+**Lock screen.** Create a password on first visit (with a skip option). Returning visits require the password to unlock. Wrong password triggers a shake animation and shows a red reset button that clears the password to start fresh. Can be disabled in Settings.
+
+**Info panel.** The ⓘ icon (replaces ?) shows a hover/click card with: apparent IP, screen dimensions, current time, battery level (Chromium), and a master volume slider. Battery level also displays next to the clock in the taskbar.
+
+**DevTools request viewer.** Toggle in Settings. Shows proxied requests in real time: method, decoded URL, status (color-coded), and size. Reads from service worker postMessage.
+
+**Night sky galaxy spin.** The star background (Night sky setting) has slow rotational drift with twinkling stars. The constellation persists across settings changes.
+
+**Taskbar auto-hide.** Toggle in Settings. Taskbar slides below viewport; hover near the bottom (6px zone) reveals it.
 
 **URL scheme.** How the destination shows in the address bar.
 - `encoded` (default): `/service/<xor>`. Obfuscated.

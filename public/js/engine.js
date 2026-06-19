@@ -97,6 +97,13 @@ const uv = {
     await navigator.serviceWorker.ready;
     // Wait for the UV SW to actually control this page (not just be active).
     await waitForController("uv.sw.js");
+    // After the SW claims the page, re-set the transport so the SW can
+    // connect to the bare-mux SharedWorker with the new MessagePort.
+    try {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const wispUrl = proto + "://" + location.host + "/wisp/";
+      await setTransport("/epoxy/index.mjs", [{ wisp: wispUrl }]);
+    } catch (e) { console.warn("[lux] transport reset:", e); }
     return reg;
   },
 
@@ -115,97 +122,99 @@ const uv = {
   },
 };
 
-// ---- Scramjet (optional) --------------------------------------------------
-// Scramjet is the newer interception proxy by the same authors as UV. It uses
-// a runtime-injection rewriter (realm pollution + proxies) rather than UV's
-// URL-string rewriting, and its own service worker + controller.
-//
-// The previous blocker was SW control timing: navigator.serviceWorker.ready
-// resolves when the SW is "active" but NOT when it "controls" the page. Without
-// control, /scramjet/* requests fall through to Express. The fix is twofold:
-//   1. The SJ SW calls clients.claim() on activate (build-uv.mjs).
-//   2. init() waits for navigator.serviceWorker.controller to become the SJ SW
-//      before returning, using the controllerchange event.
+// ---- Scramjet v2 (full controller + server-proxy fallback) ----------------
+// Tries the full Scramjet v2 controller integration first (SW-based with
+// WASM rewriting). Falls back to the server-proxy /sj-proxy endpoint if the
+// controller fails to initialize (known SW RPC issue).
+
+const PREFIX_SJ = "/~/sj/";
+let scramjetController = null; // Singleton controller instance
+
+// Try to initialize the full Scramjet controller
+async function tryInitController() {
+  if (scramjetController) return true;
+
+  try {
+    const { loadClassicScript, registerSw, createScramjetTransport } = await import("./scramjet-transport.js");
+
+    // Load the scramjet v2 runtime IIFE
+    await loadClassicScript("/scramjet/scramjet.js");
+    if (typeof globalThis.$scramjet === "undefined") {
+      throw new Error("scramjet.js did not set globalThis.$scramjet");
+    }
+
+    // Load the controller IIFE
+    await loadClassicScript("/scramjet/controller.api.js");
+    if (typeof globalThis.$scramjetController === "undefined") {
+      throw new Error("controller.api.js did not set globalThis.$scramjetController");
+    }
+
+    // Register the controller SW
+    const sw = await registerSw("/sj.sw.js");
+
+    // Create transport
+    const transport = await createScramjetTransport();
+
+    // Modify controller config in-place (Tinf0il pattern)
+    const { Controller, config } = globalThis.$scramjetController;
+    config.prefix = PREFIX_SJ;
+    config.scramjetPath = "/scramjet/scramjet.js";
+    config.injectPath = "/scramjet/controller.inject.js";
+    config.wasmPath = "/scramjet/scramjet.wasm";
+
+    const controller = new Controller({
+      serviceworker: sw,
+      transport,
+    });
+    await controller.wait();
+    scramjetController = controller;
+    return true;
+  } catch (e) {
+    console.warn("[lux] Scramjet controller init failed, using server-proxy fallback:", e.message);
+    scramjetController = null;
+    return false;
+  }
+}
 
 const scramjet = {
   name: "scramjet",
-  label: "Scramjet (unavailable)",
-  // Scramjet v1's controller has a bug: on a fresh IndexedDB it opens the DB
-  // without creating the object stores it then tries to transaction on
-  // ("object store not found"). v2 is alpha-only with no reference app. The
-  // SW registration + clients.claim + waitForController work, but the
-  // controller init throws. Disabled until v1 is patched upstream or v2
-  // stabilizes. UV is the verified engine.
-  available: false,
-
-  _controller: null,
-  _frame: null,
+  label: "Scramjet v2",
+  available: true,
 
   async init() {
-    // Lazy-load Scramjet only when this engine is selected. Use scramjet.all.js
-    // (the classic IIFE build that sets globalThis.$scramjetLoadController),
-    // NOT scramjet.bundle.js (the ESM build whose `export` throws when loaded
-    // as a classic script).
-    if (typeof $scramjetLoadController !== "function") {
-      await loadScript("/scramjet/scramjet.all.js");
-      if (typeof $scramjetLoadController !== "function") {
-        throw new Error("Scramjet bundle failed to load.");
+    // Unregister UV's SW if active
+    const existing = await navigator.serviceWorker.getRegistrations();
+    for (const reg of existing) {
+      if (!reg.scope.endsWith("/")) continue;
+      const script = reg.active?.scriptUrl || "";
+      if (script && script.includes("uv.sw.js")) {
+        await reg.unregister();
       }
     }
-    if ("serviceWorker" in navigator) {
-      // Unregister any other root-scoped SW (e.g. UV's).
-      const existing = await navigator.serviceWorker.getRegistrations();
-      for (const reg of existing) {
-        const script = reg.active?.scriptUrl || "";
-        if (reg.scope.endsWith("/") && script && !script.includes("sj.sw.js")) {
-          await reg.unregister();
-        }
-      }
-      await navigator.serviceWorker.register("/sj.sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
-      // CRITICAL: wait until the SJ SW actually controls this page. Without
-      // this, /scramjet/* navigations are not intercepted.
-      await waitForController("sj.sw.js");
-    }
-    if (!this._controller) {
-      // Delete the "scramjet" DB with a hard timeout so a blocked delete can't
-      // hang init forever. The controller recreates it fresh on init.
-      await deleteDbWithTimeout("scramjet");
-      const { ScramjetController } = $scramjetLoadController();
-      this._controller = new ScramjetController({
-        files: {
-          wasm: "/scramjet/scramjet.wasm.wasm",
-          all: "/scramjet/scramjet.all.js",
-          sync: "/scramjet/scramjet.sync.js",
-        },
-      });
-      // Race the init against a timeout so we never hang silently.
-      await Promise.race([
-        this._controller.init(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("Scramjet controller init timed out")), 30000)),
-      ]);
-    }
-    return this._controller;
+    // Try controller init (non-blocking — will fall back gracefully)
+    tryInitController().catch(() => {});
   },
 
   encode(url) {
-    // Scramjet does not expose a simple path encoder like UV; it owns the frame.
-    return null;
+    return PREFIX_SJ + encodeURIComponent(url);
   },
 
   async mount(targetUrl, iframe) {
-    const ctrl = await this.init();
-    // Reuse a single frame; Scramjet manages its own iframe.
-    if (!this._frame) {
-      this._frame = ctrl.createFrame();
-      this._frame.frame.id = "lux-sj-frame";
-      this._frame.frame.style.cssText = "width:100%;height:100%;border:0;";
+    await this.init();
+    const controller = scramjetController;
+    try {
+      if (controller) {
+        // Full Scramjet controller: create a frame and navigate
+        const frame = controller.createFrame(iframe);
+        frame.go(targetUrl);
+        return;
+      }
+    } catch (e) {
+      console.warn("[lux] Scramjet controller mount failed, falling back:", e.message);
+      scramjetController = null;
     }
-    // Replace any prior frame in the host container.
-    if (iframe && iframe.parentElement) {
-      iframe.parentElement.appendChild(this._frame.frame);
-    }
-    this._frame.go(targetUrl);
+    // Fallback: server-proxy mode
+    iframe.src = "/sj-proxy?url=" + encodeURIComponent(targetUrl);
   },
 };
 
@@ -224,7 +233,10 @@ export function getEngine() {
       if (s && s.engine) key = s.engine;
     }
   } catch {}
-  return engines[key] || uv;
+  // If the selected engine is not available, fall back to UV silently.
+  const engine = engines[key];
+  if (engine && engine.available) return engine;
+  return uv;
 }
 
 export function setEngine(name) {
