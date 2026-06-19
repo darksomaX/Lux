@@ -141,8 +141,23 @@ app.get("/uv.sw.js", (req, res) => {
 app.get("/sj.sw.js", (req, res) => {
   res.set("Service-Worker-Allowed", "/");
   res.set("Cache-Control", "no-cache, no-store, must-revalidate");
-  // Serve the controller SW (with RPC support) instead of the pass-through
-  res.sendFile(join(publicDir, "scramjet/controller.sw.js"));
+  res.type("text/javascript");
+  // The raw controller.sw.js defines $scramjetController.{shouldRoute, route}
+  // but does NOT wire a fetch event listener. Tinf0il generates a wrapper SW
+  // that importScripts the controller SW and adds the fetch handler. We do
+  // the same here.
+  res.send(`// Generated SJ SW wrapper (Tinf0il pattern).
+importScripts("/controller/controller.sw.js");
+self.addEventListener("fetch", (event) => {
+  try {
+    if ($scramjetController.shouldRoute(event)) {
+      event.respondWith($scramjetController.route(event));
+    }
+  } catch (e) {
+    console.error("[sj.sw] fetch handler error:", e);
+  }
+});
+`);
 });
 
 app.use(express.static(publicDir));

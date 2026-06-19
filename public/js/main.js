@@ -69,6 +69,15 @@ async function boot() {
   initKeyboardShortcuts();
   containerAutoHide();
 
+  // If the saved engine is Scramjet, register its SW + init the controller
+  // NOW (at boot), not lazily on first navigate. The SJ SW needs to install,
+  // activate, and claim the page before any navigation happens — this is the
+  // Tinf0il pattern and fixes the "SW doesn't control the page" timing bug.
+  const savedSettings = loadSettings();
+  if (savedSettings.engine === "scramjet") {
+    initScramjetEarly();
+  }
+
   // Add hover-zone element for taskbar auto-hide
   const zone = document.createElement("div");
   zone.id = "taskbar-hover-zone";
@@ -79,6 +88,36 @@ async function boot() {
   window.__luxTabs = Tabs;
 
   if (hashTarget) navigate(hashTarget);
+}
+
+// Early Scramjet init: register the SJ SW at boot so it controls the page
+// before any navigation. This is the Tinf0il pattern — the SW must be active
+// and controlling when the first proxied frame navigates.
+async function initScramjetEarly() {
+  try {
+    // First unregister any UV SW so the SJ SW can take the root scope.
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) {
+      if (r.scope.endsWith("/")) {
+        const u = r.active?.scriptURL || "";
+        if (!u.includes("sj.sw.js")) await r.unregister();
+      }
+    }
+    // Register the SJ SW immediately.
+    const { registerSw } = await import("./scramjet-transport.js");
+    const sw = await registerSw("/sj.sw.js");
+    console.log("[lux] SJ SW registered early:", !!sw);
+    // Now init the controller (loads scramjet.js + controller.api.js + transport).
+    // This is non-blocking; if it fails, mount() uses the /sj-proxy fallback.
+    const eng = (await import("./engine.js")).scramjet;
+    if (eng && typeof eng.tryInitEarly === "function") {
+      eng.tryInitEarly().then((ok) => {
+        console.log("[lux] Scramjet controller early init:", ok ? "ready" : "fallback");
+      });
+    }
+  } catch (e) {
+    console.warn("[lux] Scramjet early init failed:", e.message);
+  }
 }
 
 // ── Background ───────────────────────────────────────────────────────────

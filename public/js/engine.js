@@ -187,6 +187,7 @@ async function tryInitController() {
     config.scramjetPath = "/scram/scramjet.js";
     config.injectPath = "/controller/controller.inject.js";
     config.wasmPath = "/scram/scramjet.wasm";
+    console.log("[lux] SJ config prefix:", config.prefix);
 
     const controller = new Controller({
       serviceworker: sw,
@@ -207,7 +208,16 @@ const scramjet = {
   label: "Scramjet v2",
   available: true,
 
+  // Early init (called at boot when engine=scramjet). The SW is already
+  // registered by initScramjetEarly in main.js; this just loads the bundles
+  // + creates the controller.
+  async tryInitEarly() {
+    return tryInitController();
+  },
+
   async init() {
+    // If the controller was already initialized at boot (early init), skip.
+    if (scramjetController) return;
     // Unregister UV's SW if active so SJ can take over the root scope.
     const existing = await navigator.serviceWorker.getRegistrations();
     for (const reg of existing) {
@@ -217,9 +227,14 @@ const scramjet = {
         await reg.unregister();
       }
     }
-    // Try the full Tinf0il-style controller init. If it fails (SW control
-    // timing, transport issues), mount() falls back to the /sj-proxy server-
-    // side rewriting path, which renders pages correctly.
+    // Register the SJ SW if not already done by early init.
+    const hasSjSw = existing.some((r) => (r.active?.scriptURL || "").includes("sj.sw.js"));
+    if (!hasSjSw) {
+      const { registerSw } = await import("./scramjet-transport.js");
+      await registerSw("/sj.sw.js");
+    }
+    // Try the full controller init. If it fails, mount() falls back to
+    // /sj-proxy server-side rewriting.
     await tryInitController();
   },
 
