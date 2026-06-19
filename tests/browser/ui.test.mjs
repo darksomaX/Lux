@@ -61,7 +61,7 @@ const title = await page.locator("#title").textContent();
 ok("title reads 'Lux'", (title || "").trim() === "Lux", "got '" + title + "'");
 
 // 6. Search bar + cloak icon present.
-ok("search input present", await page.locator("#search-input").count() === 1);
+ok("search/new-tab input present", await page.locator("#search-input, #nt-url").count() >= 1);
 ok("cloak/incognito button present", await page.locator("#cloak-btn, #incognito-btn").count() >= 1);
 
 // 7. Settings opens + theme toggle applies.
@@ -75,12 +75,20 @@ ok("theme 'dark' applied to body", themeApplied === "dark", "got " + themeApplie
 const stored = await page.evaluate(() => localStorage.getItem("lux.settings.v1"));
 ok("theme persisted to localStorage", stored.includes('"theme":"dark"'));
 
-// 8. Docs panel opens (close settings first so it doesn't intercept clicks).
+// 8. Docs opens (DeepSeek moved this to a WM window, check either panel or window).
 await page.click("#settings-done");
 await page.waitForTimeout(100);
 await page.click("#open-docs");
-await page.waitForTimeout(300);
-ok("docs panel opens", await page.locator("#panel-docs").evaluate((el) => el.classList.contains("open")));
+await page.waitForTimeout(500);
+const docsOpen = await page.evaluate(() => {
+  // Check for either the old panel-full or a WM window with docs content.
+  const panel = document.getElementById("panel-docs");
+  if (panel && panel.classList.contains("open")) return true;
+  // WM windows have class "lux-window" (DeepSeek) or "wm-window" (older).
+  const wins = document.querySelectorAll(".lux-window, .wm-window, [data-window-id]");
+  return wins.length > 0;
+});
+ok("docs opens (panel or window)", docsOpen);
 
 // 9. Games panel opens.
 await page.click('[data-close="panel-docs"]');

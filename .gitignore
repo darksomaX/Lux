@@ -28,3 +28,6 @@ nul
 # editor
 .vscode/
 .idea/
+tinf0il*
+.commandcode/
+_tinf0il*

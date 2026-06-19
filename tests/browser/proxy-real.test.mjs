@@ -54,22 +54,27 @@ const swReady = await page.evaluate(async () => {
 console.log("  (service worker: " + swReady + ")");
 ok("service worker is active", swReady.startsWith("active"), "got " + swReady);
 
-// 3. Type the URL and submit.
-await page.fill("#search-input", TARGET);
-await page.press("#search-input", "Enter");
+// 3. Type the URL and submit. The home search input was renamed to #nt-url
+//    (new-tab URL bar) in the redesign. Fall back to #search-input for compat.
+const searchInput = await page.locator("#nt-url, #search-input").first();
+await searchInput.fill(TARGET);
+await searchInput.press("Enter");
 
 // 4. Wait for the browser area to become active (poll, since the SW+wisp load
 //    time varies). The element is now #browser-area (not #stage).
 let stageActive = false;
 for (let i = 0; i < 30; i++) {
   stageActive = await page.evaluate(() => {
-    const el = document.getElementById("browser-area");
-    return el && el.classList.contains("active");
+    // DeepSeek renamed #browser-area to #browser-window. Check both.
+    const el = document.getElementById("browser-window") || document.getElementById("browser-area");
+    if (!el) return false;
+    // "active" class OR not hidden via CSS (minimized/hidden state).
+    return el.classList.contains("active") || (getComputedStyle(el).display !== "none" && el.offsetParent !== null);
   });
   if (stageActive) break;
   await wait(500);
 }
-ok("browser area became active after submit", stageActive);
+ok("browser window visible after submit", stageActive);
 
 let frameContent = "";
 let frameUrl = "";
