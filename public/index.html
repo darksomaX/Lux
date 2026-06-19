@@ -163,21 +163,19 @@
   </section>
 
   <section class="panel-full" id="panel-tv">
-    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-tv" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-tv" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-tv" aria-label="Close"></button></div><h2>Live TV</h2></div>
+    <div class="ph"><div class="win-chrome"><button class="wc-btn wc-min" data-minimize="panel-tv" aria-label="Minimize"></button><button class="wc-btn wc-max" data-maximize="panel-tv" aria-label="Maximize"></button><button class="wc-btn wc-close" data-close="panel-tv" aria-label="Close"></button></div><h2>Apps</h2></div>
     <div class="body" id="tv-body">
-      <div style="color:var(--ink-soft);font-size:14px;line-height:1.6">
-        <div id="tv-home">
-          <div style="margin-bottom:16px">
-            <input id="tv-url" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a streaming site URL" style="width:100%;max-width:400px;height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;outline:none;text-align:center">
-            <button class="btn" id="tv-load" style="margin-left:8px">Load</button>
-          </div>
-          <div style="margin-bottom:12px;font-weight:600">Quick picks</div>
-          <div id="tv-quick-picks" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+      <div id="tv-home" style="flex:1;display:flex;flex-direction:column;padding:16px">
+        <div style="margin-bottom:14px;display:flex;gap:8px">
+          <input id="tv-url" type="text" autocomplete="off" spellcheck="false" placeholder="Enter any URL" style="flex:1;max-width:400px;height:38px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;outline:none">
+          <button class="btn" id="tv-load">Go</button>
         </div>
-        <div id="tv-player" style="display:none;flex-direction:column;gap:12px;height:100%">
-          <iframe id="tv-frame" style="flex:1;width:100%;border:1px solid var(--line);border-radius:10px;background:#000" allow="fullscreen; autoplay"></iframe>
-          <button class="btn" id="tv-back">Back</button>
-        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:10px">Apps</div>
+        <div id="tv-app-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;overflow-y:auto;flex:1"></div>
+      </div>
+      <div id="tv-player" style="display:none;flex-direction:column;flex:1;padding:8px">
+        <iframe id="tv-frame" style="flex:1;width:100%;border:1px solid var(--line);border-radius:10px;background:#000;min-height:0" allow="fullscreen; autoplay"></iframe>
+        <button class="btn" id="tv-back" style="margin-top:8px;align-self:flex-start">Back</button>
       </div>
     </div>
   </section>

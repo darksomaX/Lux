@@ -1,78 +1,57 @@
-// Scramjet v2 transport adapter. Wraps the Epoxy transport (used by bare-mux)
-// into the Scramjet Controller's expected transport interface.
-// The controller expects:
+// Scramjet v2 transport adapter. Uses EpoxyTransport directly (the same
+// WASM-backed transport that bare-mux loads in its SharedWorker).
+// The Scramjet Controller expects:
 //   transport.request(url, method, body, headers, signal) => [Response, [transfers]]
 //   transport.connect(url, protocols, requestHeaders, onOpen, onData, onClose, onError) => [send, close]
 
-let epoxyClient = null;
+let epoxyTransport = null;
 let epoxyReady = null;
 
-async function getEpoxyClient() {
-  if (epoxyClient) return epoxyClient;
+async function getEpoxyTransport() {
+  if (epoxyTransport) return epoxyTransport;
   if (!epoxyReady) {
     epoxyReady = (async () => {
       const mod = await import("/epoxy/index.mjs");
+      const EpoxyTransport = mod.default;
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const wispUrl = proto + "://" + location.host + "/wisp/";
-      epoxyClient = mod.default({ wisp: wispUrl });
-      await epoxyClient.ready;
+      // EpoxyTransport is a class — must use new
+      epoxyTransport = new EpoxyTransport({ wisp: wispUrl });
+      await epoxyTransport.init();
     })();
   }
   await epoxyReady;
-  return epoxyClient;
+  return epoxyTransport;
 }
 
 export async function createScramjetTransport() {
-  const client = await getEpoxyClient();
+  const transport = await getEpoxyTransport();
 
   return {
     async request(url, method, body, headers, signal) {
-      // Normalize URL to string
       const target = typeof url === "string" ? url : url.href;
-      const hdrs = {};
-      if (headers) {
-        for (const [k, v] of headers) hdrs[k] = v;
-      }
-      const resp = await client.request(target, {
-        method: method || "GET",
-        headers: hdrs,
-        body: body || null,
-        signal,
-      });
-      return [resp, resp.body instanceof ReadableStream ? [resp.body] : []];
+      const resp = await transport.request(target, method || "GET", body || null, headers || [], signal);
+      // Controller expects [Response, [transfers]]
+      return [resp, resp?.body instanceof ReadableStream ? [resp.body] : []];
     },
 
     connect(url, protocols, requestHeaders, onOpen, onData, onClose, onError) {
-      let ws = null;
-      let closed = false;
-
       const target = typeof url === "string" ? url : url.href;
-
       try {
-        ws = client.connect(target);
+        transport.connect(
+          target,
+          protocols || [],
+          requestHeaders || [],
+          onOpen,
+          onData,
+          onClose,
+          onError
+        );
       } catch (err) {
         onError(err.message);
-        return [() => {}, () => {}];
       }
-
-      ws.addEventListener("open", () => {
-        if (!closed) onOpen(ws.protocol || "", []);
-      });
-      ws.addEventListener("message", (e) => {
-        if (!closed) onData(e.data);
-      });
-      ws.addEventListener("close", (e) => {
-        closed = true;
-        onClose(e.code || 1000, e.reason || "");
-      });
-      ws.addEventListener("error", (e) => {
-        if (!closed) onError(e.message || "WebSocket error");
-      });
-
-      const send = (data) => { try { ws.send(data); } catch {} };
-      const close = (code, reason) => { closed = true; try { ws.close(code, reason); } catch {} };
-
-      return [send, close];
+      // Return noop send/close — EpoxyTransport's connect manages the lifecycle
+      return [() => {}, () => {}];
     },
   };
 }

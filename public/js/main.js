@@ -291,6 +291,13 @@ function initTabStrip() {
 
 function navigate(input) {
   if (!input || !isUnlocked()) return;
+  // Guard: if the input contains a Lux proxy prefix (UV /s/ or Scramjet /~/sj/
+  // or /sj-proxy), it's already a proxied URL — do NOT re-encode it. This
+  // prevents the infinite encoding loop where an already-encoded URL gets
+  // passed through UV's encoder again, multiplying its length.
+  if (input.includes("/s/") || input.includes("/~/sj/") || input.includes("/sj-proxy?")) {
+    return;
+  }
   const url = normalizeUrl(input);
   if (!url) return;
   if (breakOutOfNest(url)) return;
