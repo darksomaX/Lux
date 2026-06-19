@@ -17,7 +17,7 @@ import { initDevtools, show as showDevtools, hide as hideDevtools } from "./devt
 import { launchApp, focusWindow, closeWindow, createWindow } from "./wm.js";
 import { listEngines as listSearchEngines } from "./search-engines.js";
 import { pickRomFolder, renderGamesHome, launchRom } from "./games.js";
-import { initTV, addQuickPick } from "./tv.js";
+import { initTV, addCustomApp } from "./tv.js";
 import { initChat, disconnectChat } from "./chat.js";
 import { downloadSession, pickAndImportSession } from "./session.js";
 import { startIframeWatch, stopIframeWatch } from "./iframe-watch.js";
